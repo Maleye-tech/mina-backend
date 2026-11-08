@@ -1,0 +1,11 @@
+{
+    "name": "Coach",
+    "alias": "coach",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\Coach\\Providers\\CoachServiceProvider"
+    ],
+    "files": []
+}

@@ -1,0 +1,16 @@
+{
+    "Auth": true,
+    "Users": true,
+    "Library": true,
+    "Assessment": true,
+    "Coach": true,
+    "Progress": true,
+    "Subscriptions": true,
+    "Payments": true,
+    "Appointments": true,
+    "Chat": true,
+    "WellBeing": true,
+    "Events": true,
+    "Notifications": true,
+    "Dashboard": true
+}

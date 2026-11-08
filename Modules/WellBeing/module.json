@@ -1,0 +1,11 @@
+{
+    "name": "WellBeing",
+    "alias": "wellbeing",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\WellBeing\\Providers\\WellBeingServiceProvider"
+    ],
+    "files": []
+}
