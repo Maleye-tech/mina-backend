@@ -1,8 +1,6 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use Modules\Assessment\Http\Controllers\AssessmentController;
-
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::resource('assessments', AssessmentController::class)->names('assessment');
-});
+/*
+ * Le module Assessment est exclusivement exposé via l’API JSON
+ * (`routes/api.php`). Aucune route web n’est nécessaire.
+ */

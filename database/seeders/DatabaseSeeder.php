@@ -5,7 +5,9 @@ namespace Database\Seeders;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Modules\Assessment\Database\Seeders\AssessmentDemoSeeder;
 use Modules\Auth\Database\Seeders\AuthOnboardingSeeder;
+use Modules\Library\Database\Seeders\LibraryDemoSeeder;
 
 class DatabaseSeeder extends Seeder
 {
@@ -17,6 +19,8 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call(AuthOnboardingSeeder::class);
+        $this->call(LibraryDemoSeeder::class);
+        $this->call(AssessmentDemoSeeder::class);
 
         User::firstOrCreate(
             ['email' => 'test@example.com'],

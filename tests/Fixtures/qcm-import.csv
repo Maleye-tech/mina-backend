@@ -1,0 +1,4 @@
+subject,level,question,option_a,option_b,option_c,option_d,option_e,correct,difficulty,question_type,status,explanation,source_reference
+sante-mentale,troisieme-annee,"Quel neurotransmetteur est principalement associé à la dépression majeure ?",La sérotonine,La dopamine,L’acétylcholine,Le GABA,,A,easy,single,published,"La sérotonine participe à la régulation de l’humeur.","Cours de psychiatrie"
+pharmacologie,quatrieme-annee,"Quelle est la posologie initiale recommandée du paracétamol chez l’adulte ?","500 mg à 1 g toutes les 6 à 8 heures",2 g toutes les 4 heures,100 mg une fois par jour,4 g toutes les 2 heures,,A,medium,single,published,"La dose journalière ne doit pas dépasser 4 g chez l’adulte sain.","Formulaire thérapeutique national"
+anatomie,premiere-annee,"Quel nerf innerve le muscle deltoïde ?",Le nerf axillaire,Le nerf radial,Le nerf médian,Le nerf ulnaire,,A,easy,single,draft,"Le nerf axillaire assure l’innervation motrice du deltoïde.","Atlas d’anatomie"
