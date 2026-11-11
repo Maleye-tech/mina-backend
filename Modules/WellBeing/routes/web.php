@@ -1,8 +1,14 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Modules\WellBeing\Http\Controllers\WellBeingController;
 
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::resource('wellbeings', WellBeingController::class)->names('wellbeing');
-});
+/*
+ * Le module Mina Care est consommé par l'application frontend via l'API.
+ * La page web historique est conservée sous forme de redirection afin de ne
+ * pas casser les liens existants.
+ */
+Route::get('wellbeings', function () {
+    $frontendUrl = rtrim((string) config('app.frontend_url'), '/');
+
+    return redirect()->away($frontendUrl !== '' ? $frontendUrl.'/wellbeing' : '/');
+})->middleware(['auth', 'verified'])->name('wellbeing.index');

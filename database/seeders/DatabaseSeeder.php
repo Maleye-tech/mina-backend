@@ -8,6 +8,7 @@ use Illuminate\Database\Seeder;
 use Modules\Assessment\Database\Seeders\AssessmentDemoSeeder;
 use Modules\Auth\Database\Seeders\AuthOnboardingSeeder;
 use Modules\Library\Database\Seeders\LibraryDemoSeeder;
+use Modules\WellBeing\Database\Seeders\WellBeingDemoSeeder;
 
 class DatabaseSeeder extends Seeder
 {
@@ -21,6 +22,7 @@ class DatabaseSeeder extends Seeder
         $this->call(AuthOnboardingSeeder::class);
         $this->call(LibraryDemoSeeder::class);
         $this->call(AssessmentDemoSeeder::class);
+        $this->call(WellBeingDemoSeeder::class);
 
         User::firstOrCreate(
             ['email' => 'test@example.com'],
