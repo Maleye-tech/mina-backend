@@ -11,6 +11,7 @@ RUN npm run build
 FROM php:8.3-apache
 
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
+ENV HOME=/var/www
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -45,14 +46,7 @@ WORKDIR /var/www/html
 
 COPY . .
 
-RUN composer install \
-        --no-dev \
-        --no-interaction \
-        --no-progress \
-        --prefer-dist \
-        --no-scripts \
-    && composer dump-autoload --no-dev --no-interaction --optimize \
-    && mkdir -p \
+RUN mkdir -p \
         storage/app/private \
         storage/app/public \
         storage/framework/cache/data \
@@ -60,6 +54,13 @@ RUN composer install \
         storage/framework/views \
         storage/logs \
         bootstrap/cache \
+    && composer install \
+        --no-dev \
+        --no-interaction \
+        --no-progress \
+        --prefer-dist \
+        --no-scripts \
+    && composer dump-autoload --no-dev --no-interaction --optimize --no-scripts \
     && printf '%s\n' \
         'upload_max_filesize=220M' \
         'post_max_size=230M' \
@@ -72,7 +73,9 @@ COPY --from=assets /app/public/build /var/www/html/public/build
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint
 COPY docker/supervisord.conf /etc/supervisor/conf.d/laravel.conf
 
-RUN chmod +x /usr/local/bin/entrypoint
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint \
+    && sed -i 's/\r$//' /etc/supervisor/conf.d/laravel.conf \
+    && chmod +x /usr/local/bin/entrypoint
 
 EXPOSE 10000
 
