@@ -11,6 +11,14 @@ use Modules\Auth\Enums\UserRole;
 class FlashcardDeckPolicy
 {
     /**
+     * La liste de tous les paquets (y compris les brouillons) est réservée aux administrateurs.
+     */
+    public function viewAny(User $user): Response
+    {
+        return $this->adminOnly($user, 'Seuls les administrateurs peuvent consulter les paquets de cartes.');
+    }
+
+    /**
      * Les paquets publiés sont visibles par tous ; les brouillons par les administrateurs.
      */
     public function view(User $user, FlashcardDeck $deck): Response

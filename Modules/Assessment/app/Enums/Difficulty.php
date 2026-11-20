@@ -33,4 +33,16 @@ enum Difficulty: string implements HasColor, HasLabel
             self::Hard => 'danger',
         };
     }
+
+    public static function options(): array
+    {
+        return array_column(
+            array_map(
+                static fn (self $case): array => [$case->value, $case->label()],
+                self::cases(),
+            ),
+            1,
+            0,
+        );
+    }
 }

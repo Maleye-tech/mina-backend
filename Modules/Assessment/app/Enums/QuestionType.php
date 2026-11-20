@@ -30,4 +30,16 @@ enum QuestionType: string implements HasColor, HasLabel
             self::Multiple => 'warning',
         };
     }
+
+    public static function options(): array
+    {
+        return array_column(
+            array_map(
+                static fn (self $case): array => [$case->value, $case->label()],
+                self::cases(),
+            ),
+            1,
+            0,
+        );
+    }
 }

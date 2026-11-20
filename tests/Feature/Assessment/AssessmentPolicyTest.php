@@ -6,8 +6,11 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
 use Modules\Assessment\Models\Attempt;
+use Modules\Assessment\Models\ClinicalCase;
 use Modules\Assessment\Models\Flashcard;
 use Modules\Assessment\Models\FlashcardDeck;
+use Modules\Assessment\Models\QcmImport;
+use Modules\Assessment\Models\Question;
 use Modules\Auth\Enums\UserRole;
 use Tests\TestCase;
 
@@ -53,5 +56,16 @@ class AssessmentPolicyTest extends TestCase
         $this->assertFalse(Gate::forUser($student)->allows('create', Flashcard::class));
         $this->assertFalse(Gate::forUser($student)->allows('update', $flashcard));
         $this->assertFalse(Gate::forUser($student)->allows('delete', $flashcard));
+    }
+
+    public function test_view_any_policies_reserve_content_listings_to_administrators(): void
+    {
+        $admin = User::factory()->create(['role' => UserRole::Admin]);
+        $student = User::factory()->create(['role' => UserRole::Student]);
+
+        foreach ([Question::class, FlashcardDeck::class, ClinicalCase::class, QcmImport::class] as $model) {
+            $this->assertTrue(Gate::forUser($admin)->allows('viewAny', $model));
+            $this->assertFalse(Gate::forUser($student)->allows('viewAny', $model));
+        }
     }
 }

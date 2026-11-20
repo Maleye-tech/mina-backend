@@ -26,6 +26,7 @@ class SubjectFactory extends Factory
             'name' => ucfirst($name),
             'slug' => Str::slug($name),
             'description' => fake()->optional()->sentence(),
+            'color' => fake()->hexColor(),
             'is_active' => true,
             'sort_order' => fake()->numberBetween(0, 50),
         ];

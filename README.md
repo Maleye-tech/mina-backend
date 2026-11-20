@@ -42,7 +42,58 @@ Ces deux opérations nécessitent un jeton Sanctum valide et sont limitées en f
 - Le module Users expose la ressource admin `GET /api/v1/users` (filtres `search`, `role`, `is_active`, `per_page`), `GET /api/v1/users/{id}`, `PATCH /api/v1/users/{id}` (`name`, `email`, `role`, `is_active`) et `DELETE /api/v1/users/{id}`. Un admin ne peut pas modifier son propre rôle, désactiver ou supprimer son propre compte, ni retirer le dernier admin actif; changer l’adresse e-mail réinitialise sa vérification et désactiver un compte révoque ses jetons.
 - Le middleware `role` accepte les rôles définis par `UserRole`, par exemple `role:admin` ou `role:student,ambassador`. La ressource API de gestion des utilisateurs est réservée aux admins. Les contrôleurs des autres modules doivent appliquer le middleware correspondant à leur propre politique métier.
 - Les routes API authentifiées exigent un jeton Sanctum de capacité `full-access`. `POST /api/auth/logout` révoque le jeton courant; `POST /api/auth/logout-all` révoque toutes les sessions. Le changement/réinitialisation du mot de passe et la suppression du compte révoquent aussi les jetons concernés.
-- Les admins doivent activer TOTP. Après mot de passe, `POST /api/auth/login` fournit un `challenge_token` temporaire (10 min), sans accès normal à l’API. Pour le premier accès, appeler `POST /api/auth/two-factor/setup` puis `POST /api/auth/two-factor/confirm-setup` avec `code`; pour les connexions suivantes, appeler `POST /api/auth/two-factor/challenge` avec le code de l’application. La validation délivre le jeton API complet. Les codes TOTP déjà utilisés sont refusés.
-- Le panneau Filament exige également une authentification TOTP pour les admins et partage le même secret, stocké chiffré. Les codes de récupération du panneau sont également chiffrés.
+- Les admins reçoivent un code de connexion par e-mail. Après le mot de passe, `POST /api/auth/login` renvoie un `challenge_token` temporaire (15 min, sans accès à l’API) et envoie un code à 6 chiffres à l’adresse du compte (valable 10 minutes, 5 tentatives maximum). `POST /api/auth/two-factor/challenge` avec ce code délivre le jeton API complet; le code et le jeton de challenge sont invalidés après usage. Les routes `two-factor/setup` et `two-factor/confirm-setup` ont été retirées.
+- Le panneau Filament conserve sa propre authentification TOTP pour les admins, avec secret stocké chiffré et codes de récupération chiffrés; ce secret n’intervient plus dans l’ouverture de session API.
 
 La migration MFA révoque les jetons des admins existants afin qu’ils repassent par l’enrôlement TOTP. Déployer le schéma avec `php artisan migrate`.
+
+## Envoi d’e-mails (Brevo)
+
+Les e-mails transactionnels — vérification d’adresse, réinitialisation de mot de passe et code de connexion admin — partent via l’API transactionnelle de Brevo (`api.brevo.com/v3/smtp/email`). `MAIL_MAILER=brevo` active le transport maison `App\Mail\BrevoTransport`, enregistré dans `AppServiceProvider`, qui s’authentifie avec `BREVO_API_KEY`; l’expéditeur vient de `BREVO_FROM_EMAIL`/`BREVO_FROM_NAME` (source de `MAIL_FROM_ADDRESS` et `MAIL_FROM_NAME`). L’alternative SMTP (`smtp-relay.brevo.com`, port 587) exige une SMTP key distincte de l’API key, générée dans Brevo (Settings → SMTP & API). Les tests utilisent le transport `array` (`phpunit.xml`) et n’envoient rien.
+
+## Bibliothèque (Library)
+
+Le module Library gère le contenu pédagogique : matières (`subjects`), niveaux (`levels`), contenus rédactionnels (`contents` : `course`, `summary_sheet`, `recap`) et podcasts. Toutes les routes ci-dessous sont sous `/api/v1/library`, exigent un jeton `full-access` et ne retourne que les éléments publiés (`is_published = true`).
+
+- `GET /api/v1/library/subjects` et `GET /api/v1/library/levels` retournent les taxonomies triées (`sort_order`, puis `name`).
+- `GET /api/v1/library/contents` liste les contenus avec pagination (15 par page, `per_page` jusqu'à 100). Filtres : `search` (titre/description), `subject_id`, `level_id`, `type` (`course` | `summary_sheet` | `recap`), `favorite=1` (favoris de l'utilisateur courant). Chaque item expose `favorited` calculé pour l'utilisateur.
+- `GET /api/v1/library/contents/{id}` retourne le contenu complet avec `body` (HTML riche) et l'état `favorited`. Un contenu non publié répond `404`.
+- `POST /api/v1/library/contents/{id}/favorite` et `DELETE .../favorite` gèrent le favori de l'utilisateur (liste polymorphe `library_favorites`, partagée avec les podcasts).
+- `GET /api/v1/library/podcasts` accepte les mêmes filtres que les contenus (sans `type`). `GET /api/v1/library/podcasts/{id}`, `POST .../favorite` et `DELETE .../favorite` suivent la même logique.
+- `POST /api/v1/library/podcasts` (admin uniquement, limitée à 10 requêtes/minute) accepte un multipart avec `title` (requis), `audio` (fichier ≤ 200 Mo, mp3/wav/m4a/aac/ogg), `description`, `subject_id`, `level_id`, `is_published` et `sort_order`. L'audio est stocké sur `LIBRARY_AUDIO_DISK` (S3 en production) ; la création déclenche en file la compression `CompressPodcastAudio` (ffmpeg, bitrate configurable via `config/library.php`, repli `skipped` si ffmpeg est absent). `compression_status` suit `pending → processing → done | failed | skipped`.
+- `GET /api/v1/library/offline-manifest` retourne le manifeste de synchronisation hors-ligne : taxonomies, tous les contenus publiés (avec `body`), les podcasts favorisés publiés (avec `audio_url` signé à durée limitée, `signed_url_ttl_minutes`) et les identifiants de favoris.
+
+Les ressources Filament « Bibliothèque » (Niveaux, Matières, Contenus, Podcasts) permettent aux admins de gérer taxonomies, rédaction HTML et publications depuis le panneau, avec upload audio pour les podcasts. Le panneau et l'API partagent les mêmes tables `library_*`.
+
+## Évaluation (Assessment)
+
+Le module Assessment couvre les QCM, les cartes mémoire à répétition espacée (SM-2) et les cas cliniques. Toutes les routes sont sous `/api/v1`, exigent un jeton `full-access`, et le catalogue ne retourne que les contenus publiés.
+
+- **QCM** : `GET /api/v1/qcm/questions` (filtres `subject_id`, `level_id`, `difficulty`, `per_page`) et `GET /api/v1/qcm/questions/{id}` — le catalogue n'expose ni `is_correct` ni `explanation` avant réponse. Sessions : `GET/POST /api/v1/qcm/sessions` (`subject_id`, `level_id`, `difficulty`, `question_count` ≤ 50), `GET /api/v1/qcm/sessions/{id}`, `POST .../answers` (`question_id`, `option_ids`, 60/min) renvoie la correction complète, `POST .../finish` clôture et calcule le score.
+- **Flashcards** : `GET /api/v1/flashcards/decks`, `GET .../decks/{id}`, `GET /api/v1/flashcards/reviews/today`, `POST /api/v1/flashcards/{id}/reviews` avec `quality` de 0 (`blackout`) à 5 (`perfect`), 60/min.
+- **Cas cliniques** : `GET /api/v1/clinical-cases`, `GET .../{id}` ; tentatives `GET/POST /api/v1/clinical-cases/attempts` (`clinical_case_id`), `GET .../attempts/{id}`, `POST .../answers` (`step_id`, `answer`, 60/min) avec corrigé révélé progressivement, `POST .../finish`.
+- **Imports** (admin, 10/min) : `GET/POST /api/v1/qcm/imports`, `GET .../{id}` — `POST` accepte `file` et `dry_run` et pousse le job `ProcessQcmImport`.
+
+Les ressources Filament « Évaluation » (Questions, Paquets de flashcards, Cas cliniques, Imports QCM) permettent la gestion complète des contenus depuis le panneau admin.
+
+### Import de QCM
+
+L'import accepte un fichier **CSV ou Excel `.xlsx`** (première feuille, 2 Mo maximum), via l'API `POST /api/v1/qcm/imports` ou la ressource Filament « Imports QCM ». En-tête attendu (normalisé en minuscules, séparateurs convertis en `_`) :
+
+- obligatoires : `subject`, `level`, `question`, `correct` ;
+- options : `option_a` à `option_e` (2 à 5 renseignées) ;
+- facultatifs : `difficulty` (`easy` | `medium` | `hard`, défaut `medium`), `question_type` (`single` | `multiple`, déduit de `correct` si absent), `status` (`draft` | `published`, défaut `draft`), `explanation`, `source_reference`.
+
+La colonne `correct` accepte les lettres A à E ou les chiffres 1 à 5, séparés par virgules, espaces ou points-virgules pour une réponse multiple. Les doublons (matière + niveau + énoncé normalisé) sont comptés, y compris parmi les questions supprimées ; `dry_run=true` valide et compte sans écrire. Les erreurs ligne à ligne (500 maximum) sont stockées dans `errors` ; un format non supporté passe l'import en échec.
+
+## Mina Care (WellBeing)
+
+Le module WellBeing gère les fiches de prévention, les tests d'auto-évaluation, l'historique personnel et les contacts d'urgence. Toutes les routes sont sous `/api/v1/wellbeing`, exigent un jeton `full-access` **et le consentement courant aux données de santé mentale** (`consents.mental_health_data`, accordé via `PATCH /api/auth/settings`) ; sans consentement, elles répondent `403`.
+
+- `GET /api/v1/wellbeing/articles` et `GET .../articles/{slug}` : fiches de prévention publiées.
+- `GET /api/v1/wellbeing/tests` et `GET .../tests/{id}` : catalogue de tests d'auto-évaluation. `POST .../tests/{id}/results` (30/min) soumet `answers: [{question_id, option_key}]` et recalcule les scores.
+- `GET /api/v1/wellbeing/results` et `GET .../results/{id}` : historique personnel des résultats.
+- `GET /api/v1/wellbeing/emergency-contacts` : contacts d'urgence actifs.
+- `GET /api/v1/wellbeings` : route de compatibilité renvoyant le catalogue des fiches.
+
+Les ressources Filament du module (fiches, tests, résultats, contacts d'urgence) vivent dans `Modules/WellBeing/app/Filament/Resources` et apparaissent dans le panneau admin sous « Mina Care ».

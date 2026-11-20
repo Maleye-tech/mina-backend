@@ -11,6 +11,17 @@ use Modules\Auth\Enums\UserRole;
 class ClinicalCasePolicy
 {
     /**
+     * La liste de tous les cas cliniques (y compris les brouillons) est réservée
+     * aux administrateurs.
+     */
+    public function viewAny(User $user): Response
+    {
+        return $user->hasRole(UserRole::Admin)
+            ? Response::allow()
+            : Response::deny('Seuls les administrateurs peuvent consulter les cas cliniques.');
+    }
+
+    /**
      * Les cas cliniques publiés sont visibles par tous ; les brouillons par
      * les administrateurs.
      */

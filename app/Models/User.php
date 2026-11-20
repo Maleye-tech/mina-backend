@@ -2,20 +2,21 @@
 
 namespace App\Models;
 
-use Filament\Models\Contracts\FilamentUser;
-use Filament\Panel;
 use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthentication;
 use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthenticationRecovery;
+use Filament\Models\Contracts\FilamentUser;
+use Filament\Panel;
 use Illuminate\Auth\MustVerifyEmail;
 use Illuminate\Contracts\Auth\MustVerifyEmail as MustVerifyEmailContract;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\HasApiTokens;
 use Modules\Auth\Enums\UserRole;
+use Modules\Library\Models\Favorite;
 
 class User extends Authenticatable implements FilamentUser, HasAppAuthentication, HasAppAuthenticationRecovery, MustVerifyEmailContract
 {
@@ -62,6 +63,7 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
             'is_active' => 'boolean',
             'two_factor_secret' => 'encrypted',
             'two_factor_enabled_at' => 'datetime',
+            'login_code_expires_at' => 'datetime',
             'app_authentication_recovery_codes' => 'encrypted:array',
             'onboarding_completed_at' => 'datetime',
             'notifications_enabled' => 'boolean',
@@ -71,6 +73,11 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
     public function consents(): HasMany
     {
         return $this->hasMany(UserConsent::class);
+    }
+
+    public function favorites(): HasMany
+    {
+        return $this->hasMany(Favorite::class);
     }
 
     public function hasCurrentConsent(string $consentType): bool

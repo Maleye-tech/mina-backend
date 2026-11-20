@@ -2,6 +2,8 @@
 
 namespace Modules\Assessment\Services;
 
+use DateInterval;
+use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -13,16 +15,20 @@ use Modules\Assessment\Models\QcmImport;
 use Modules\Assessment\Models\Question;
 use Modules\Library\Models\Level;
 use Modules\Library\Models\Subject;
+use OpenSpout\Reader\XLSX\Reader as XlsxReader;
 use RuntimeException;
 use Throwable;
 
 /**
- * Import de questions QCM depuis un fichier CSV.
+ * Import de questions QCM depuis un fichier CSV ou Excel (.xlsx).
  *
  * Le fichier attendu comporte un en-tête avec au minimum les colonnes
  * `subject`, `level`, `question` et `correct`, ainsi que deux à cinq colonnes
  * `option_a` à `option_e`. La colonne `correct` accepte les lettres A à E ou
  * les chiffres 1 à 5, séparés par des virgules pour une réponse multiple.
+ *
+ * Pour un classeur .xlsx, la première feuille non vide est lue ; la première
+ * ligne non vide de cette feuille sert d’en-tête.
  *
  * Les lignes valides sont créées dans une transaction ; les doublons sont
  * détectés par une empreinte stable (matière, niveau, énoncé normalisé), y
@@ -176,7 +182,8 @@ class QcmImportService
     }
 
     /**
-     * Lire le fichier CSV et renvoyer les lignes non vides avec leur numéro.
+     * Lire les lignes du fichier d’import et renvoyer les lignes non vides
+     * avec leur numéro.
      *
      * @return array<int, array{line: int, data: array<string, string|null>}>
      */
@@ -188,7 +195,24 @@ class QcmImportService
             throw new RuntimeException('Le fichier d’import est introuvable.');
         }
 
-        $handle = fopen($disk->path($import->file_path), 'rb');
+        $path = $disk->path($import->file_path);
+        $extension = strtolower(pathinfo($import->file_path, PATHINFO_EXTENSION));
+
+        return match ($extension) {
+            'csv', 'txt' => $this->readCsvRows($path),
+            'xlsx' => $this->readXlsxRows($path),
+            default => throw new RuntimeException('Format de fichier non pris en charge (CSV ou XLSX attendu).'),
+        };
+    }
+
+    /**
+     * Lire les lignes d’un fichier CSV.
+     *
+     * @return array<int, array{line: int, data: array<string, string|null>}>
+     */
+    private function readCsvRows(string $path): array
+    {
+        $handle = fopen($path, 'rb');
 
         if ($handle === false) {
             throw new RuntimeException('Le fichier d’import ne peut pas être lu.');
@@ -201,20 +225,7 @@ class QcmImportService
                 throw new RuntimeException('Le fichier d’import est vide.');
             }
 
-            $header = $this->normalizeHeader($header);
-
-            if (count(array_unique($header)) !== count($header)) {
-                throw new RuntimeException('L’en-tête du fichier contient des colonnes en double.');
-            }
-
-            $missingColumns = array_diff(self::REQUIRED_COLUMNS, $header);
-
-            if ($missingColumns !== []) {
-                throw new RuntimeException(
-                    'Colonnes obligatoires manquantes : '.implode(', ', $missingColumns).'.'
-                );
-            }
-
+            $header = $this->assertValidHeader($header);
             $rows = [];
             $line = 1;
 
@@ -240,16 +251,131 @@ class QcmImportService
     }
 
     /**
+     * Lire les lignes de la première feuille d’un classeur .xlsx. La première
+     * ligne non vide de la feuille sert d’en-tête.
+     *
+     * @return array<int, array{line: int, data: array<string, string|null>}>
+     */
+    private function readXlsxRows(string $path): array
+    {
+        $reader = new XlsxReader;
+        $rows = [];
+        $header = null;
+
+        try {
+            $reader->open($path);
+
+            foreach ($reader->getSheetIterator() as $sheet) {
+                $line = 0;
+
+                foreach ($sheet->getRowIterator() as $row) {
+                    $line++;
+
+                    $values = array_map(
+                        $this->stringifyCell(...),
+                        $row->toArray(),
+                    );
+
+                    if ($header === null) {
+                        if ($this->isEmptyRow($values)) {
+                            continue;
+                        }
+
+                        $header = $this->assertValidHeader($values);
+
+                        continue;
+                    }
+
+                    if ($this->isEmptyRow($values)) {
+                        continue;
+                    }
+
+                    $values = array_pad($values, count($header), null);
+
+                    /** @var array<string, string|null> $data */
+                    $data = array_combine($header, array_slice($values, 0, count($header)));
+
+                    $rows[] = ['line' => $line, 'data' => $data];
+                }
+
+                break;
+            }
+        } finally {
+            $reader->close();
+        }
+
+        if ($header === null) {
+            throw new RuntimeException('Le fichier d’import est vide.');
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Normaliser l’en-tête, vérifier l’absence de doublons et la présence des
+     * colonnes obligatoires, puis la renvoyer.
+     *
+     * @param  array<int, string|null>  $header
+     * @return array<int, string>
+     */
+    private function assertValidHeader(array $header): array
+    {
+        $header = $this->normalizeHeader($header);
+
+        if (count(array_unique($header)) !== count($header)) {
+            throw new RuntimeException('L’en-tête du fichier contient des colonnes en double.');
+        }
+
+        $missingColumns = array_diff(self::REQUIRED_COLUMNS, $header);
+
+        if ($missingColumns !== []) {
+            throw new RuntimeException(
+                'Colonnes obligatoires manquantes : '.implode(', ', $missingColumns).'.'
+            );
+        }
+
+        return $header;
+    }
+
+    /**
+     * Convertir une cellule Excel en chaîne comparable au comportement CSV.
+     */
+    private function stringifyCell(bool|DateInterval|DateTimeInterface|float|int|string|null $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+
+        if (is_float($value)) {
+            return floor($value) === $value ? (string) (int) $value : (string) $value;
+        }
+
+        if ($value instanceof DateInterval) {
+            return (string) $value->days;
+        }
+
+        if ($value instanceof DateTimeInterface) {
+            return $value->format('Y-m-d H:i:s');
+        }
+
+        return (string) $value;
+    }
+
+    /**
      * Normaliser l’en-tête : retirer le BOM, passer en minuscules et remplacer
      * les séparateurs par des underscores.
      *
-     * @param  array<int, string>  $header
+     * @param  array<int, string|null>  $header
      * @return array<int, string>
      */
     private function normalizeHeader(array $header): array
     {
-        return array_map(function (string $column): string {
-            $column = preg_replace('/^\xEF\xBB\xBF/', '', $column) ?? $column;
+        return array_map(function (?string $column): string {
+            $column = preg_replace('/^\xEF\xBB\xBF/', '', (string) $column) ?? (string) $column;
             $column = mb_strtolower(trim($column));
 
             return preg_replace('/[^a-z0-9]+/', '_', $column) ?? $column;

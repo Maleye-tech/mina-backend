@@ -2,9 +2,11 @@
 
 namespace App\Providers;
 
+use App\Mail\BrevoTransport;
 use App\Models\User;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Auth\Notifications\VerifyEmail;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
@@ -23,6 +25,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Mail::extend('brevo', fn (array $config): BrevoTransport => new BrevoTransport((string) $config['key']));
+
         ResetPassword::createUrlUsing(function (User $user, string $token): string {
             return rtrim(config('app.frontend_url'), '/').'/reset-password?'.http_build_query([
                 'token' => $token,

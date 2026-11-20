@@ -16,16 +16,6 @@ Route::prefix('auth')->group(function () {
 
     Route::prefix('two-factor')->middleware([
         'auth:sanctum',
-        'abilities:two-factor-setup',
-        'role:admin',
-        'throttle:6,1',
-    ])->group(function () {
-        Route::post('setup', [AuthController::class, 'setupTwoFactor']);
-        Route::post('confirm-setup', [AuthController::class, 'confirmTwoFactorSetup']);
-    });
-
-    Route::prefix('two-factor')->middleware([
-        'auth:sanctum',
         'abilities:two-factor-challenge',
         'role:admin',
         'throttle:6,1',

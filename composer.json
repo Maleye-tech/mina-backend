@@ -12,6 +12,7 @@
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^3.0",
         "nwidart/laravel-modules": "^13.3",
+        "openspout/openspout": "^4.32",
         "pragmarx/google2fa": "^9.1"
     },
     "require-dev": {

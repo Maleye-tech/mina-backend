@@ -11,6 +11,16 @@ use Modules\Auth\Enums\UserRole;
 class QuestionPolicy
 {
     /**
+     * La liste de toutes les questions (y compris les brouillons) est réservée aux administrateurs.
+     */
+    public function viewAny(User $user): Response
+    {
+        return $user->hasRole(UserRole::Admin)
+            ? Response::allow()
+            : Response::deny('Seuls les administrateurs peuvent consulter les questions.');
+    }
+
+    /**
      * Les questions publiées sont visibles par tous ; les brouillons par les administrateurs.
      */
     public function view(User $user, Question $question): Response

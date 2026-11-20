@@ -15,7 +15,9 @@ class DatabaseSeederTest extends TestCase
         $this->seed();
         $this->seed();
 
-        $this->assertDatabaseCount('users', 1);
+        $this->assertDatabaseCount('users', 3);
         $this->assertModelExists(User::where('email', 'test@example.com')->firstOrFail());
+        $this->assertModelExists(User::where('email', 'student@example.com')->firstOrFail());
+        $this->assertModelExists(User::where('email', 'admin@example.com')->firstOrFail());
     }
 }

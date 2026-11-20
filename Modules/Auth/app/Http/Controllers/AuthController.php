@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -25,10 +26,14 @@ use Modules\Auth\Http\Requests\SubmitStudentOnboardingRequest;
 use Modules\Auth\Http\Requests\UpdateStudentProfileRequest;
 use Modules\Auth\Http\Requests\UpdateUserSettingsRequest;
 use Modules\Auth\Http\Requests\VerifyTwoFactorCodeRequest;
-use PragmaRX\Google2FA\Google2FA;
+use Modules\Auth\Notifications\AdminLoginCode;
 
 class AuthController extends Controller
 {
+    private const int MAX_LOGIN_CODE_ATTEMPTS = 5;
+
+    private const int LOGIN_CODE_TTL_MINUTES = 10;
+
     public function register(RegisterRequest $request): JsonResponse
     {
         // L'inscription publique crée toujours un étudiant.
@@ -66,20 +71,28 @@ class AuthController extends Controller
         }
 
         if ($user->hasRole(UserRole::Admin)) {
-            $tokenName = $user->two_factor_enabled_at
-                ? 'admin-2fa-challenge'
-                : 'admin-2fa-setup';
-            $ability = $user->two_factor_enabled_at
-                ? 'two-factor-challenge'
-                : 'two-factor-setup';
-            $token = $user->createToken($tokenName, [$ability], now()->addMinutes(10));
+            $code = (string) random_int(100000, 999999);
+
+            $user->forceFill([
+                'login_code_hash' => Hash::make($code),
+                'login_code_expires_at' => now()->addMinutes(self::LOGIN_CODE_TTL_MINUTES),
+                'login_code_attempts' => 0,
+            ])->save();
+
+            $user->notify(new AdminLoginCode($code));
+
+            Log::info("Code de connexion admin ({$user->email}) : {$code}");
+
+            $token = $user->createToken(
+                'admin-email-challenge',
+                ['two-factor-challenge'],
+                now()->addMinutes(self::LOGIN_CODE_TTL_MINUTES + 5),
+            );
 
             return response()->json([
-                'message' => $user->two_factor_enabled_at
-                    ? 'Saisissez le code de votre application d’authentification.'
-                    : 'Configurez la double authentification avant de continuer.',
-                'requires_two_factor' => (bool) $user->two_factor_enabled_at,
-                'requires_two_factor_setup' => ! $user->two_factor_enabled_at,
+                'message' => 'Un code de connexion a été envoyé à votre adresse e-mail.',
+                'requires_two_factor' => true,
+                'requires_two_factor_setup' => false,
                 'challenge_token' => $token->plainTextToken,
             ]);
         }
@@ -159,104 +172,66 @@ class AuthController extends Controller
         ]);
     }
 
-    public function setupTwoFactor(Request $request, Google2FA $google2fa): JsonResponse
+    public function completeTwoFactorChallenge(VerifyTwoFactorCodeRequest $request): JsonResponse
     {
-        $user = $request->user();
+        $userId = $request->user()->getKey();
+        $challengeToken = $request->user()->currentAccessToken();
 
-        abort_if($user->two_factor_enabled_at, 409, 'La double authentification est déjà activée.');
+        $outcome = DB::transaction(function () use ($request, $userId, $challengeToken): array {
+            $user = User::query()->lockForUpdate()->findOrFail($userId);
 
-        if (! $user->two_factor_secret) {
+            $codeIsLive = $user->login_code_hash !== null
+                && $user->login_code_expires_at !== null
+                && $user->login_code_expires_at->isFuture();
+
+            $valid = $codeIsLive
+                && $user->login_code_attempts < self::MAX_LOGIN_CODE_ATTEMPTS
+                && Hash::check($request->validated('code'), $user->login_code_hash);
+
+            if (! $valid) {
+                if ($codeIsLive) {
+                    $attempts = $user->login_code_attempts + 1;
+
+                    $user->forceFill([
+                        'login_code_attempts' => $attempts,
+                        ...($attempts >= self::MAX_LOGIN_CODE_ATTEMPTS
+                            ? ['login_code_hash' => null, 'login_code_expires_at' => null]
+                            : []),
+                    ])->save();
+                }
+
+                Log::warning('Code de connexion admin invalide', [
+                    'email' => $user->email,
+                    'tentatives' => $user->login_code_attempts,
+                    'code_expire' => ! $codeIsLive,
+                ]);
+
+                return ['valid' => false];
+            }
+
             $user->forceFill([
-                'two_factor_secret' => $google2fa->generateSecretKey(),
+                'login_code_hash' => null,
+                'login_code_expires_at' => null,
+                'login_code_attempts' => 0,
             ])->save();
+
+            $challengeToken->delete();
+
+            return [
+                'valid' => true,
+                'token' => $user->createToken('mina-app', ['full-access'])->plainTextToken,
+            ];
+        });
+
+        if (! $outcome['valid']) {
+            throw ValidationException::withMessages([
+                'code' => ['Le code de vérification est invalide ou a expiré.'],
+            ]);
         }
 
         return response()->json([
-            'secret' => $user->two_factor_secret,
-            'otpauth_url' => $google2fa->getQRCodeUrl(
-                config('app.name'),
-                $user->email,
-                $user->two_factor_secret,
-            ),
-        ]);
-    }
-
-    public function confirmTwoFactorSetup(
-        VerifyTwoFactorCodeRequest $request,
-        Google2FA $google2fa,
-    ): JsonResponse {
-        $userId = $request->user()->getKey();
-        $challengeToken = $request->user()->currentAccessToken();
-
-        $token = DB::transaction(function () use ($request, $google2fa, $userId, $challengeToken): string {
-            $user = User::query()->lockForUpdate()->findOrFail($userId);
-
-            abort_if($user->two_factor_enabled_at, 409, 'La double authentification est déjà activée.');
-
-            $counter = $google2fa->verifyKeyNewer(
-                $user->two_factor_secret,
-                $request->validated('code'),
-                $user->two_factor_last_used_counter ?? 0,
-            );
-
-            if ($counter === false) {
-                throw ValidationException::withMessages([
-                    'code' => ['Le code de vérification est invalide ou a expiré.'],
-                ]);
-            }
-
-            $user->forceFill([
-                'two_factor_enabled_at' => now(),
-                'two_factor_last_used_counter' => $counter,
-            ])->save();
-
-            $challengeToken->delete();
-
-            return $user->createToken('mina-app', ['full-access'])->plainTextToken;
-        });
-
-        return response()->json([
-            'message' => 'La double authentification est activée.',
-            'token' => $token,
-        ]);
-    }
-
-    public function completeTwoFactorChallenge(
-        VerifyTwoFactorCodeRequest $request,
-        Google2FA $google2fa,
-    ): JsonResponse {
-        $userId = $request->user()->getKey();
-        $challengeToken = $request->user()->currentAccessToken();
-
-        $token = DB::transaction(function () use ($request, $google2fa, $userId, $challengeToken): string {
-            $user = User::query()->lockForUpdate()->findOrFail($userId);
-
-            abort_unless($user->two_factor_enabled_at && $user->two_factor_secret, 403);
-
-            $counter = $google2fa->verifyKeyNewer(
-                $user->two_factor_secret,
-                $request->validated('code'),
-                $user->two_factor_last_used_counter ?? 0,
-            );
-
-            if ($counter === false) {
-                throw ValidationException::withMessages([
-                    'code' => ['Le code de vérification est invalide ou a déjà été utilisé.'],
-                ]);
-            }
-
-            $user->forceFill([
-                'two_factor_last_used_counter' => $counter,
-            ])->save();
-
-            $challengeToken->delete();
-
-            return $user->createToken('mina-app', ['full-access'])->plainTextToken;
-        });
-
-        return response()->json([
             'message' => 'Connexion réussie.',
-            'token' => $token,
+            'token' => $outcome['token'],
         ]);
     }
 

@@ -16,6 +16,8 @@ use Modules\Auth\Enums\UserRole;
 use Modules\Library\Database\Seeders\LibraryDemoSeeder;
 use Modules\Library\Models\Level;
 use Modules\Library\Models\Subject;
+use OpenSpout\Common\Entity\Row;
+use OpenSpout\Writer\XLSX\Writer;
 use Tests\TestCase;
 
 class QcmImportTest extends TestCase
@@ -45,6 +47,44 @@ class QcmImportTest extends TestCase
     private function sampleCsv(): string
     {
         return (string) file_get_contents(base_path('tests/Fixtures/qcm-import.csv'));
+    }
+
+    /**
+     * Découper le fixture CSV en lignes de cellules (en-tête compris).
+     *
+     * @return array<int, array<int, string|null>>
+     */
+    private function fixtureRows(): array
+    {
+        $lines = array_values(array_filter(explode("\n", $this->sampleCsv()), fn (string $line): bool => trim($line) !== ''));
+
+        return array_map(
+            fn (string $line): array => array_map(
+                fn ($value): ?string => $value === null ? null : (string) $value,
+                str_getcsv($line, ',', '"', ''),
+            ),
+            $lines,
+        );
+    }
+
+    /**
+     * Écrire les lignes dans un vrai classeur .xlsx et renvoyer son chemin.
+     *
+     * @param  array<int, array<int, string|null>>  $rows
+     */
+    private function buildXlsx(array $rows): string
+    {
+        $path = tempnam(sys_get_temp_dir(), 'qcm-import').'.xlsx';
+        $writer = new Writer;
+        $writer->openToFile($path);
+
+        foreach ($rows as $row) {
+            $writer->addRow(Row::fromValues($row));
+        }
+
+        $writer->close();
+
+        return $path;
     }
 
     private function storeImport(string $csv, bool $dryRun = false): QcmImport
@@ -264,5 +304,99 @@ class QcmImportTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.status', 'completed');
+    }
+
+    public function test_admin_can_upload_an_xlsx_file_and_the_import_is_queued(): void
+    {
+        Storage::fake('local');
+        Queue::fake();
+
+        $this->actingAsUser(UserRole::Admin);
+
+        $path = $this->buildXlsx($this->fixtureRows());
+
+        $file = new UploadedFile(
+            $path,
+            'questions.xlsx',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            null,
+            true,
+        );
+
+        $response = $this->post('/api/v1/qcm/imports', [
+            'file' => $file,
+            'dry_run' => true,
+        ], ['Accept' => 'application/json']);
+
+        $response
+            ->assertStatus(202)
+            ->assertJsonPath('message', 'Import de QCM lancé.')
+            ->assertJsonPath('import.status', 'pending')
+            ->assertJsonPath('import.filename', 'questions.xlsx');
+
+        $import = QcmImport::query()->firstOrFail();
+
+        $this->assertSame('questions.xlsx', $import->filename);
+        $this->assertTrue(Storage::disk('local')->exists($import->file_path));
+
+        Queue::assertPushed(
+            ProcessQcmImport::class,
+            fn (ProcessQcmImport $job): bool => $job->import->is($import),
+        );
+    }
+
+    public function test_import_processes_an_xlsx_file(): void
+    {
+        Storage::fake('local');
+        $this->seed(LibraryDemoSeeder::class);
+
+        $path = $this->buildXlsx($this->fixtureRows());
+        $binary = (string) file_get_contents($path);
+        unlink($path);
+
+        Storage::disk('local')->put('assessment-imports/test.xlsx', $binary);
+
+        $import = QcmImport::factory()->create([
+            'file_path' => 'assessment-imports/test.xlsx',
+            'status' => ImportStatus::Pending,
+        ]);
+
+        $processed = app(QcmImportService::class)->process($import);
+
+        $this->assertSame(ImportStatus::Completed, $processed->status);
+        $this->assertSame(3, $processed->total_rows);
+        $this->assertSame(3, $processed->imported_count);
+        $this->assertSame(0, $processed->duplicate_count);
+        $this->assertSame(0, $processed->failed_count);
+        $this->assertNull($processed->errors);
+
+        $this->assertSame(3, Question::query()->count());
+        $this->assertSame(12, Question::query()->withCount('options')->get()->sum('options_count'));
+
+        $question = Question::query()
+            ->where('question', 'like', 'Quel neurotransmetteur%')
+            ->with('options')
+            ->firstOrFail();
+
+        $this->assertSame('La sérotonine', $question->options->firstWhere('is_correct', true)?->label);
+    }
+
+    public function test_import_with_an_unsupported_extension_fails(): void
+    {
+        Storage::fake('local');
+
+        Storage::disk('local')->put('assessment-imports/test.pdf', '%PDF-1.4 fake');
+
+        $import = QcmImport::factory()->create([
+            'file_path' => 'assessment-imports/test.pdf',
+            'status' => ImportStatus::Pending,
+        ]);
+
+        $processed = app(QcmImportService::class)->process($import);
+
+        $this->assertSame(ImportStatus::Failed, $processed->status);
+        $this->assertNotNull($processed->errors);
+        $this->assertStringContainsString('Format de fichier non pris en charge', $processed->errors[0]['errors'][0]);
+        $this->assertSame(0, Question::query()->count());
     }
 }
