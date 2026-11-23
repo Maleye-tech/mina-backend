@@ -27,6 +27,7 @@ use Modules\Auth\Http\Requests\UpdateStudentProfileRequest;
 use Modules\Auth\Http\Requests\UpdateUserSettingsRequest;
 use Modules\Auth\Http\Requests\VerifyTwoFactorCodeRequest;
 use Modules\Auth\Notifications\AdminLoginCode;
+use OpenApi\Attributes as OA;
 
 class AuthController extends Controller
 {
@@ -34,6 +35,44 @@ class AuthController extends Controller
 
     private const int LOGIN_CODE_TTL_MINUTES = 10;
 
+    #[OA\Post(
+        path: '/auth/register',
+        operationId: 'register',
+        tags: ['Auth'],
+        summary: 'Créer un compte étudiant',
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['name', 'email', 'password', 'password_confirmation'],
+                properties: [
+                    new OA\Property(property: 'name', type: 'string', maxLength: 255, example: 'Camille Dupont'),
+                    new OA\Property(property: 'email', type: 'string', format: 'email', example: 'camille@example.com'),
+                    new OA\Property(property: 'password', type: 'string', format: 'password', minLength: 8),
+                    new OA\Property(property: 'password_confirmation', type: 'string', format: 'password'),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 201,
+                description: 'Compte créé, e-mail de vérification envoyé',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string'),
+                        new OA\Property(property: 'token', type: 'string', description: 'Jeton Sanctum (full-access)'),
+                        new OA\Property(property: 'user', ref: '#/components/schemas/User'),
+                    ]
+                )
+            ),
+            new OA\Response(response: 422, description: 'Données invalides', content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'errors', type: 'object', additionalProperties: true),
+                ]
+            )),
+            new OA\Response(response: 429, description: 'Trop de tentatives'),
+        ]
+    )]
     public function register(RegisterRequest $request): JsonResponse
     {
         // L'inscription publique crée toujours un étudiant.
@@ -54,6 +93,45 @@ class AuthController extends Controller
         ], 201);
     }
 
+    #[OA\Post(
+        path: '/auth/login',
+        operationId: 'login',
+        tags: ['Auth'],
+        summary: 'Se connecter',
+        description: 'Renvoie un jeton Sanctum. Un administrateur reçoit d\'abord un code 2FA par e-mail (requires_two_factor).',
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['email', 'password'],
+                properties: [
+                    new OA\Property(property: 'email', type: 'string', format: 'email'),
+                    new OA\Property(property: 'password', type: 'string', format: 'password'),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Connexion réussie (ou challenge 2FA pour un admin)',
+                content: new OA\JsonContent(
+                    properties: [
+                        new OA\Property(property: 'message', type: 'string'),
+                        new OA\Property(property: 'token', type: 'string', nullable: true),
+                        new OA\Property(property: 'user', ref: '#/components/schemas/User'),
+                        new OA\Property(property: 'requires_two_factor', type: 'boolean'),
+                        new OA\Property(property: 'challenge_token', type: 'string', nullable: true),
+                    ]
+                )
+            ),
+            new OA\Response(response: 422, description: 'Identifiants incorrects ou compte désactivé', content: new OA\JsonContent(
+                properties: [
+                    new OA\Property(property: 'message', type: 'string'),
+                    new OA\Property(property: 'errors', type: 'object', additionalProperties: true),
+                ]
+            )),
+            new OA\Response(response: 429, description: 'Trop de tentatives'),
+        ]
+    )]
     public function login(LoginRequest $request): JsonResponse
     {
         $user = User::where('email', $request->validated('email'))->first();
