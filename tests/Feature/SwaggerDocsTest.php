@@ -11,6 +11,17 @@ class SwaggerDocsTest extends TestCase
         $this->get('/api/documentation')->assertOk();
     }
 
+    public function test_api_documentation_assets_use_https_behind_a_tls_terminating_proxy(): void
+    {
+        $response = $this->withHeader('X-Forwarded-Proto', 'https')
+            ->get('/api/documentation');
+
+        $response->assertOk()
+            ->assertSee('https://localhost:8000/docs/asset/swagger-ui.css', false)
+            ->assertSee('https://localhost:8000/docs/asset/swagger-ui-bundle.js', false)
+            ->assertSee('https://localhost:8000/docs/asset/swagger-ui-standalone-preset.js', false);
+    }
+
     public function test_openapi_document_exposes_the_api_contract(): void
     {
         $document = $this->getJson('/docs')->assertOk()->json();
