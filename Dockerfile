@@ -8,7 +8,7 @@ RUN npm install --no-audit --no-fund
 COPY . .
 RUN npm run build
 
-FROM php:8.3-apache
+FROM php:8.4-apache
 
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
 ENV HOME=/var/www
