@@ -6,6 +6,8 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Modules\Chat\Database\Factories\MessageFactory;
 
 /**
@@ -13,7 +15,7 @@ use Modules\Chat\Database\Factories\MessageFactory;
  */
 class Message extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $table = 'chat_messages';
 
@@ -25,12 +27,16 @@ class Message extends Model
         'sender_id',
         'body',
         'read_at',
+        'is_crisis',
+        'crisis_keywords',
     ];
 
     protected function casts(): array
     {
         return [
             'read_at' => 'datetime',
+            'is_crisis' => 'boolean',
+            'crisis_keywords' => 'array',
         ];
     }
 
@@ -47,5 +53,10 @@ class Message extends Model
     public function sender(): BelongsTo
     {
         return $this->belongsTo(User::class, 'sender_id');
+    }
+
+    public function reports(): HasMany
+    {
+        return $this->hasMany(ChatReport::class, 'message_id');
     }
 }

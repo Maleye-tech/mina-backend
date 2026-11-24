@@ -25,6 +25,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'abilities' => CheckAbilities::class,
             'consent' => EnsureUserHasCurrentConsent::class,
             'role' => EnsureUserHasRole::class,
+            'subscribed' => \Modules\Subscriptions\Http\Middleware\EnsureSubscribed::class,
+            'etag' => \App\Http\Middleware\AddEtagHeader::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -31,6 +31,9 @@ class ConversationResource extends JsonResource
             ],
             'last_message' => MessageResource::make($this->whenLoaded('lastMessage')),
             'last_message_at' => $this->last_message_at?->toIso8601String(),
+            'is_with_ambassador' => (bool) $this->is_with_ambassador,
+            'crisis_flagged_at' => $this->crisis_flagged_at?->toIso8601String(),
+            'status' => $this->status,
             'unread_count' => (int) ($this->unread_count ?? $this->unreadCountFor($request->user())),
             'created_at' => $this->created_at?->toIso8601String(),
         ];

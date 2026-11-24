@@ -3,54 +3,58 @@
 namespace Modules\Events\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Modules\Events\Http\Resources\EventRegistrationResource;
+use Modules\Events\Http\Resources\EventResource;
+use Modules\Events\Models\Event;
+use Modules\Events\Services\EventService;
 
 class EventsController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
+    public function __construct(private readonly EventService $events) {}
+
+    public function index(Request $request): AnonymousResourceCollection
     {
-        return view('events::index');
+        $perPage = min($request->integer('per_page', 15), 50);
+
+        $filters = [
+            'type' => $request->string('type')->toString(),
+            'timeframe' => $request->string('timeframe')->toString(),
+        ];
+
+        return EventResource::collection($this->events->list($filters, $perPage));
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
+    public function show(Event $event): EventResource
     {
-        return view('events::create');
+        return EventResource::make($event);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request) {}
-
-    /**
-     * Show the specified resource.
-     */
-    public function show($id)
+    public function register(Request $request, Event $event): JsonResponse
     {
-        return view('events::show');
+        $registration = $this->events->register($request->user(), $event);
+
+        return response()->json([
+            'message' => 'Inscription à l\'événement confirmée.',
+            'registration' => EventRegistrationResource::make($registration),
+        ], 201);
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit($id)
+    public function unregister(Request $request, Event $event): JsonResponse
     {
-        return view('events::edit');
+        $unregistered = $this->events->unregister($request->user(), $event);
+
+        return response()->json([
+            'message' => $unregistered ? 'Inscription annulée.' : 'Vous n\'étiez pas inscrit à cet événement.',
+        ]);
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, $id) {}
+    public function myRegistrations(Request $request): AnonymousResourceCollection
+    {
+        $perPage = min($request->integer('per_page', 15), 50);
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy($id) {}
+        return EventRegistrationResource::collection($this->events->userRegistrations($request->user(), $perPage));
+    }
 }

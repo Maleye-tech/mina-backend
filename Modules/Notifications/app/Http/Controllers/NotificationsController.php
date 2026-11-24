@@ -3,54 +3,72 @@
 namespace Modules\Notifications\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class NotificationsController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
+    public function index(Request $request): JsonResponse
     {
-        return view('notifications::index');
+        $user = $request->user();
+        $perPage = min($request->integer('per_page', 15), 50);
+
+        $notifications = $user->notifications()->paginate($perPage);
+
+        return response()->json([
+            'unread_count' => $user->unreadNotifications()->count(),
+            'preferences' => [
+                'notifications_enabled' => $user->notifications_enabled,
+                'email_notifications' => $user->email_notifications,
+                'push_notifications' => $user->push_notifications,
+            ],
+            'data' => $notifications->items(),
+            'pagination' => [
+                'current_page' => $notifications->currentPage(),
+                'last_page' => $notifications->lastPage(),
+                'per_page' => $notifications->perPage(),
+                'total' => $notifications->total(),
+            ],
+        ]);
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
+    public function markAsRead(Request $request, string $id): JsonResponse
     {
-        return view('notifications::create');
+        $notification = $request->user()->notifications()->where('id', $id)->firstOrFail();
+        $notification->markAsRead();
+
+        return response()->json([
+            'message' => 'Notification marquée comme lue.',
+        ]);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request) {}
-
-    /**
-     * Show the specified resource.
-     */
-    public function show($id)
+    public function markAllAsRead(Request $request): JsonResponse
     {
-        return view('notifications::show');
+        $request->user()->unreadNotifications->markAsRead();
+
+        return response()->json([
+            'message' => 'Toutes les notifications ont été marquées comme lues.',
+        ]);
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit($id)
+    public function updatePreferences(Request $request): JsonResponse
     {
-        return view('notifications::edit');
+        $validated = $request->validate([
+            'notifications_enabled' => ['nullable', 'boolean'],
+            'email_notifications' => ['nullable', 'boolean'],
+            'push_notifications' => ['nullable', 'boolean'],
+            'fcm_token' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $request->user()->update($validated);
+
+        return response()->json([
+            'message' => 'Préférences de notification mises à jour.',
+            'preferences' => [
+                'notifications_enabled' => $request->user()->notifications_enabled,
+                'email_notifications' => $request->user()->email_notifications,
+                'push_notifications' => $request->user()->push_notifications,
+            ],
+        ]);
     }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, $id) {}
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy($id) {}
 }

@@ -3,6 +3,8 @@
 namespace Modules\Notifications\Providers;
 
 use Illuminate\Console\Scheduling\Schedule;
+use Modules\Notifications\Console\CheckTrialExpirationsCommand;
+use Modules\Notifications\Console\SendAppointmentRemindersCommand;
 use Nwidart\Modules\Support\ModuleServiceProvider;
 
 class NotificationsServiceProvider extends ModuleServiceProvider
@@ -17,12 +19,10 @@ class NotificationsServiceProvider extends ModuleServiceProvider
      */
     protected string $nameLower = 'notifications';
 
-    /**
-     * Command classes to register.
-     *
-     * @var string[]
-     */
-    // protected array $commands = [];
+    protected array $commands = [
+        SendAppointmentRemindersCommand::class,
+        CheckTrialExpirationsCommand::class,
+    ];
 
     /**
      * Provider classes to register.

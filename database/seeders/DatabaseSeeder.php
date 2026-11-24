@@ -25,6 +25,9 @@ class DatabaseSeeder extends Seeder
         $this->call(LibraryDemoSeeder::class);
         $this->call(AssessmentDemoSeeder::class);
         $this->call(WellBeingDemoSeeder::class);
+        $this->call(\Modules\Subscriptions\Database\Seeders\SubscriptionsDatabaseSeeder::class);
+        $this->call(\Modules\Appointments\Database\Seeders\AppointmentsDemoSeeder::class);
+        $this->call(\Modules\Events\Database\Seeders\EventsDemoSeeder::class);
 
         User::firstOrCreate(
             ['email' => 'test@example.com'],

@@ -14,9 +14,13 @@ use Modules\Chat\Http\Controllers\MessageController;
 Route::middleware([
     'auth:sanctum',
     'abilities:full-access',
-    'role:student,professional',
 ])->prefix('v1')->name('chat.')->group(function (): void {
-    Route::prefix('conversations')->name('conversations.')->group(function (): void {
+    // Orientation ambassadeur accessible aux étudiants
+    Route::post('chat/request-ambassador', [ConversationController::class, 'requestAmbassador'])
+        ->middleware('role:student')
+        ->name('conversations.request-ambassador');
+
+    Route::middleware('role:student,professional')->prefix('conversations')->name('conversations.')->group(function (): void {
         /*
          * Liste et ouverture des conversations de l'utilisateur.
          */
@@ -25,14 +29,15 @@ Route::middleware([
         Route::get('/{conversation}', [ConversationController::class, 'show'])->name('show');
 
         /*
-         * Messages d'une conversation : consultation (marque les messages
-         * reçus comme lus) et envoi.
+         * Messages d'une conversation : consultation, envoi, suppression, signalement.
          */
         Route::prefix('{conversation}/messages')->name('messages.')->group(function (): void {
             Route::get('/', [MessageController::class, 'index'])->name('index');
             Route::post('/', [MessageController::class, 'store'])
                 ->middleware('throttle:chat-messages')
                 ->name('store');
+            Route::delete('/{message}', [MessageController::class, 'destroy'])->name('destroy');
+            Route::post('/{message}/report', [MessageController::class, 'report'])->name('report');
         });
     });
 });

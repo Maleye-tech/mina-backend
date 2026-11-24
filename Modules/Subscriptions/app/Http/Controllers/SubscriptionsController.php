@@ -3,54 +3,78 @@
 namespace Modules\Subscriptions\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Modules\Subscriptions\Http\Requests\RedeemCodeRequest;
+use Modules\Subscriptions\Http\Resources\SubscriptionPlanResource;
+use Modules\Subscriptions\Http\Resources\SubscriptionResource;
+use Modules\Subscriptions\Models\SubscriptionPlan;
+use Modules\Subscriptions\Services\SubscriptionService;
 
 class SubscriptionsController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
+    public function __construct(private readonly SubscriptionService $subscriptions) {}
+
+    public function plans(): JsonResponse
     {
-        return view('subscriptions::index');
+        $plans = SubscriptionPlan::query()->active()->orderBy('price')->get();
+
+        return response()->json([
+            'trial_days' => SubscriptionService::TRIAL_DURATION_DAYS,
+            'plans' => SubscriptionPlanResource::collection($plans),
+        ]);
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
+    public function current(Request $request): JsonResponse
     {
-        return view('subscriptions::create');
+        $user = $request->user();
+        $subscription = $this->subscriptions->currentSubscription($user);
+
+        return response()->json([
+            'has_active_access' => $this->subscriptions->hasActiveAccess($user),
+            'can_start_trial' => $this->subscriptions->canStartTrial($user),
+            'subscription' => $subscription ? SubscriptionResource::make($subscription) : null,
+        ]);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request) {}
-
-    /**
-     * Show the specified resource.
-     */
-    public function show($id)
+    public function startTrial(Request $request): JsonResponse
     {
-        return view('subscriptions::show');
+        $subscription = $this->subscriptions->startTrial($request->user());
+
+        return response()->json([
+            'message' => 'Votre essai gratuit de 3 jours est activé.',
+            'subscription' => SubscriptionResource::make($subscription),
+        ], 201);
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit($id)
+    public function redeemCode(RedeemCodeRequest $request): JsonResponse
     {
-        return view('subscriptions::edit');
+        $subscription = $this->subscriptions->redeemCode(
+            $request->user(),
+            $request->string('code')->trim()->toString()
+        );
+
+        return response()->json([
+            'message' => 'Code d\'accès validé avec succès. Votre abonnement est actif.',
+            'subscription' => SubscriptionResource::make($subscription),
+        ]);
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, $id) {}
+    public function cancel(Request $request): JsonResponse
+    {
+        $subscription = $this->subscriptions->currentSubscription($request->user());
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy($id) {}
+        if (! $subscription || ! $subscription->isValid()) {
+            return response()->json([
+                'message' => 'Aucun abonnement actif à résilier.',
+            ], 422);
+        }
+
+        $this->subscriptions->cancel($subscription);
+
+        return response()->json([
+            'message' => 'Le renouvellement automatique de votre abonnement a été désactivé.',
+            'subscription' => SubscriptionResource::make($subscription->fresh()),
+        ]);
+    }
 }

@@ -26,12 +26,17 @@ class Conversation extends Model
         'participant_one_id',
         'participant_two_id',
         'last_message_at',
+        'is_with_ambassador',
+        'crisis_flagged_at',
+        'status',
     ];
 
     protected function casts(): array
     {
         return [
             'last_message_at' => 'datetime',
+            'is_with_ambassador' => 'boolean',
+            'crisis_flagged_at' => 'datetime',
         ];
     }
 

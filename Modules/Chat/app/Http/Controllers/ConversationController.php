@@ -78,6 +78,50 @@ class ConversationController extends Controller
     }
 
     /**
+     * Oriente automatiquement l'étudiant vers un ambassadeur formé.
+     */
+    public function requestAmbassador(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $ambassador = \App\Models\User::query()
+            ->where('role', \Modules\Auth\Enums\UserRole::Ambassador->value)
+            ->where('is_active', true)
+            ->where('id', '!=', $user->id)
+            ->inRandomOrder()
+            ->first();
+
+        if (! $ambassador) {
+            $ambassador = \App\Models\User::query()
+                ->where('role', \Modules\Auth\Enums\UserRole::Professional->value)
+                ->where('is_active', true)
+                ->where('id', '!=', $user->id)
+                ->first();
+        }
+
+        if (! $ambassador) {
+            return response()->json([
+                'message' => 'Aucun ambassadeur disponible pour le moment. Veuillez contacter notre ligne d\'urgence.',
+            ], 404);
+        }
+
+        [$one, $two] = [$user->id, $ambassador->id];
+        [$one, $two] = $one < $two ? [$one, $two] : [$two, $one];
+
+        $conversation = Conversation::firstOrCreate(
+            ['participant_one_id' => $one, 'participant_two_id' => $two],
+            ['last_message_at' => null, 'is_with_ambassador' => true],
+        );
+
+        $conversation->load(['participantOne', 'participantTwo']);
+
+        return response()->json([
+            'message' => 'Vous êtes maintenant connecté avec un pair aidant / ambassadeur formé.',
+            'data' => ConversationResource::make($conversation),
+        ], 200);
+    }
+
+    /**
      * @return Builder<Conversation>
      */
     private function baseQuery(int $userId): Builder

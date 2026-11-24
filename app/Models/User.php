@@ -38,6 +38,9 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
         'pseudonym',
         'preferred_language',
         'notifications_enabled',
+        'email_notifications',
+        'push_notifications',
+        'fcm_token',
     ];
 
     protected $hidden = [
@@ -52,6 +55,8 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
         'is_active' => true,
         'preferred_language' => 'fr',
         'notifications_enabled' => true,
+        'email_notifications' => true,
+        'push_notifications' => true,
     ];
 
     protected function casts(): array
@@ -67,6 +72,8 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
             'app_authentication_recovery_codes' => 'encrypted:array',
             'onboarding_completed_at' => 'datetime',
             'notifications_enabled' => 'boolean',
+            'email_notifications' => 'boolean',
+            'push_notifications' => 'boolean',
         ];
     }
 
