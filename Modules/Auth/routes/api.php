@@ -6,6 +6,7 @@ use Modules\Auth\Http\Controllers\OnboardingController;
 use Modules\Auth\Http\Controllers\OnboardingQuestionController;
 
 Route::prefix('auth')->group(function () {
+    Route::get('onboarding', [OnboardingController::class, 'show']);
     Route::post('register', [AuthController::class, 'register'])->middleware('throttle:10,1');
     Route::post('login', [AuthController::class, 'login'])->middleware('throttle:5,1');
     Route::post('forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:5,1');

@@ -63,8 +63,8 @@ class OnboardingController extends Controller
             'questions' => $questions,
             'universities' => $universities,
             'partner_institutions' => $partnerInstitutions,
-            'current_role' => $user->role->value,
-            'student_profile' => [
+            'current_role' => $user?->role?->value,
+            'student_profile' => $user ? [
                 'education_level' => $user->education_level,
                 'study_field' => $user->study_field,
                 'university_id' => $user->university_id,
@@ -72,7 +72,7 @@ class OnboardingController extends Controller
                 'faculty_id' => $user->faculty_id,
                 'faculty' => $user->faculty,
                 'onboarding_completed' => $user->onboarding_completed_at !== null,
-            ],
+            ] : null,
         ]);
     }
 }

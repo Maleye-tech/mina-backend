@@ -3,54 +3,95 @@
 namespace Modules\Dashboard\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Modules\Appointments\Enums\AppointmentStatus;
+use Modules\Appointments\Models\Appointment;
+use Modules\Appointments\Models\AppointmentProfessional;
 
 class DashboardController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * Indicateurs clés du tableau de bord selon le rôle connecté.
+     *
+     * Retourne du JSON uniquement (jamais de view Blade).
      */
-    public function index()
+    public function index(Request $request): JsonResponse
     {
-        return view('dashboard::index');
+        $user = $request->user();
+        $role = $request->string('role');
+
+        $data = match ($role) {
+            'professional' => $this->professionalIndicators($user),
+            'admin' => $this->adminIndicators(),
+            default => $this->defaultIndicators($user),
+        };
+
+        return response()->json(['data' => $data]);
     }
 
     /**
-     * Show the form for creating a new resource.
+     * Indicateurs pour un professionnel de santé mentale.
      */
-    public function create()
+    private function professionalIndicators(User $user): array
     {
-        return view('dashboard::create');
+        $professional = AppointmentProfessional::query()
+            ->where('user_id', $user->id)
+            ->first();
+
+        $appointments = $professional === null
+            ? collect()
+            : Appointment::query()->where('professional_id', $professional->id);
+
+        $pendingCount = $appointments->whenNotEmpty(fn ($q) => $q->where('status', AppointmentStatus::Pending))->count();
+        $appointmentsCount = $appointments->count();
+
+        return [
+            'active_users_count' => DB::table('users')->count(),
+            'pending_demands_count' => $pendingCount,
+            'appointments_count' => $appointmentsCount,
+            'validations_count' => 0,
+            'recent_activities' => $appointments
+                ->whenNotEmpty(fn ($q) => $q->with('student')->latest('scheduled_at')->limit(5))
+                ->get()
+                ->map(fn ($a) => [
+                    'id' => $a->id,
+                    'title' => 'Rendez-vous avec '.($a->student?->name ?? 'Inconnu'),
+                    'type' => 'consultation',
+                    'date' => $a->scheduled_at?->toIso8601String(),
+                    'status' => $a->status->value,
+                ])
+                ->all(),
+        ];
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Indicateurs pour un administrateur.
      */
-    public function store(Request $request) {}
-
-    /**
-     * Show the specified resource.
-     */
-    public function show($id)
+    private function adminIndicators(): array
     {
-        return view('dashboard::show');
+        return [
+            'active_users_count' => DB::table('users')->count(),
+            'pending_demands_count' => Appointment::query()->where('status', AppointmentStatus::Pending)->count(),
+            'appointments_count' => Appointment::query()->count(),
+            'validations_count' => 0,
+            'recent_activities' => collect(),
+        ];
     }
 
     /**
-     * Show the form for editing the specified resource.
+     * Indicateurs par défaut (autres rôles).
      */
-    public function edit($id)
+    private function defaultIndicators(User $user): array
     {
-        return view('dashboard::edit');
+        return [
+            'active_users_count' => 0,
+            'pending_demands_count' => 0,
+            'appointments_count' => 0,
+            'validations_count' => 0,
+            'recent_activities' => [],
+        ];
     }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, $id) {}
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy($id) {}
 }

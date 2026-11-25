@@ -4,7 +4,7 @@ use Illuminate\Support\Facades\Route;
 use Modules\Users\Http\Controllers\UsersController;
 
 Route::middleware(['auth:sanctum', 'abilities:full-access'])->prefix('v1')->group(function () {
-    Route::middleware('role:admin')->group(function () {
+    Route::middleware('role:admin,professional')->group(function () {
         Route::apiResource('users', UsersController::class)
             ->except(['store'])
             ->names('users');

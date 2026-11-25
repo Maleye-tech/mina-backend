@@ -3,16 +3,22 @@
 namespace Modules\Appointments\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Modules\Appointments\Http\Requests\AvailabilityRequest;
 use Modules\Appointments\Http\Requests\BookAppointmentRequest;
 use Modules\Appointments\Http\Requests\CancelAppointmentRequest;
 use Modules\Appointments\Http\Requests\RescheduleAppointmentRequest;
+use Modules\Appointments\Http\Resources\AppointmentAvailabilityResource;
 use Modules\Appointments\Http\Resources\AppointmentProfessionalResource;
 use Modules\Appointments\Http\Resources\AppointmentResource;
 use Modules\Appointments\Http\Resources\AppointmentSlotResource;
 use Modules\Appointments\Models\Appointment;
+use Modules\Appointments\Models\AppointmentAvailability;
+use Modules\Appointments\Models\AppointmentProfessional;
 use Modules\Appointments\Services\AppointmentService;
 use Modules\Auth\Enums\UserRole;
 
@@ -104,5 +110,101 @@ class AppointmentsController extends Controller
             'message' => 'Rendez-vous reporté avec succès.',
             'appointment' => AppointmentResource::make($rescheduled->load(['professional.user', 'student'])),
         ]);
+    }
+
+    /**
+     * Disponibilités du professionnel connecté.
+     */
+    public function availability(Request $request): AnonymousResourceCollection
+    {
+        $professional = $this->currentProfessional($request->user());
+
+        return AppointmentAvailabilityResource::collection(
+            AppointmentAvailability::query()
+                ->where('professional_id', $professional->id)
+                ->orderBy('weekday')
+                ->orderBy('start_time')
+                ->get()
+        );
+    }
+
+    /**
+     * Créer une disponibilité pour le professionnel connecté.
+     */
+    public function storeAvailability(AvailabilityRequest $request): JsonResponse
+    {
+        $professional = $this->currentProfessional($request->user());
+
+        $availability = AppointmentAvailability::create([
+            'professional_id' => $professional->id,
+            'weekday' => $request->integer('weekday'),
+            'start_time' => $request->input('start_time'),
+            'end_time' => $request->input('end_time'),
+            'is_active' => $request->boolean('is_active', true),
+        ]);
+
+        return response()->json([
+            'message' => 'Disponibilité créée avec succès.',
+            'availability' => AppointmentAvailabilityResource::make($availability),
+        ], 201);
+    }
+
+    /**
+     * Modifier une disponibilité du professionnel connecté.
+     */
+    public function updateAvailability(AvailabilityRequest $request, int $id): JsonResponse
+    {
+        $professional = $this->currentProfessional($request->user());
+
+        $availability = AppointmentAvailability::query()
+            ->where('professional_id', $professional->id)
+            ->whereKey($id)
+            ->firstOrFail();
+
+        $availability->update([
+            'start_time' => $request->input('start_time', $availability->start_time),
+            'end_time' => $request->input('end_time', $availability->end_time),
+            'is_active' => $request->boolean('is_active', $availability->is_active),
+        ]);
+
+        return response()->json([
+            'message' => 'Disponibilité mise à jour.',
+            'availability' => AppointmentAvailabilityResource::make($availability->fresh()),
+        ]);
+    }
+
+    /**
+     * Supprimer une disponibilité du professionnel connecté.
+     */
+    public function destroyAvailability(Request $request, int $id): JsonResponse
+    {
+        $professional = $this->currentProfessional($request->user());
+
+        $availability = AppointmentAvailability::query()
+            ->where('professional_id', $professional->id)
+            ->whereKey($id)
+            ->firstOrFail();
+
+        $availability->delete();
+
+        return response()->json([
+            'message' => 'Disponibilité supprimée.',
+        ]);
+    }
+
+    /**
+     * Récupère le profil professionnel de l'utilisateur connecté.
+     *
+     * @throws HttpResponseException 403 si l'utilisateur n'est pas un professionnel.
+     */
+    private function currentProfessional(?User $user): AppointmentProfessional
+    {
+        $professional = $user?->professionalProfile;
+
+        if ($professional === null) {
+            abort(403, 'Vous devez être un professionnel de santé mentale pour gérer vos disponibilités.');
+        }
+
+        return $professional;
     }
 }
