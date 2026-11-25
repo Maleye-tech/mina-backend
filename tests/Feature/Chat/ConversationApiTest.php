@@ -53,7 +53,7 @@ class ConversationApiTest extends TestCase
     {
         return [
             'admin' => [UserRole::Admin],
-            'ambassador' => [UserRole::Ambassador],
+            'partner' => [UserRole::Partner],
         ];
     }
 

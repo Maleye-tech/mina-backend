@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Modules\Appointments\Models\AppointmentProfessional;
 use Modules\Auth\Enums\UserRole;
 use Modules\Auth\Http\Requests\ChangePasswordRequest;
 use Modules\Auth\Http\Requests\DeleteAccountRequest;
@@ -75,20 +76,62 @@ class AuthController extends Controller
     )]
     public function register(RegisterRequest $request): JsonResponse
     {
-        // L'inscription publique crée toujours un étudiant.
-        // Les ambassadeurs et professionnels sont créés par un administrateur.
-        $user = User::create([
+        $roleInput = $request->validated('role', 'student');
+        $role = UserRole::tryFrom($roleInput) ?? UserRole::Student;
+
+        // Sécurité : interdire la création d'un compte admin via l'inscription publique
+        if ($role === UserRole::Admin) {
+            $role = UserRole::Student;
+        }
+
+        $userData = [
             'name' => $request->validated('name'),
             'email' => $request->validated('email'),
             'password' => $request->validated('password'),
-            'role' => UserRole::Student,
-        ]);
+            'role' => $role,
+            'pseudonym' => $request->validated('pseudonym'),
+        ];
+
+        if ($request->filled('partner_institution_id')) {
+            $userData['partner_institution_id'] = $request->validated('partner_institution_id');
+        }
+        if ($request->filled('partner_position')) {
+            $userData['partner_position'] = $request->validated('partner_position');
+        }
+        if ($request->filled('university_id')) {
+            $userData['university_id'] = $request->validated('university_id');
+            $university = University::find($request->validated('university_id'));
+            $userData['university'] = $university?->name;
+        }
+        if ($request->filled('faculty_id')) {
+            $userData['faculty_id'] = $request->validated('faculty_id');
+            $faculty = Faculty::find($request->validated('faculty_id'));
+            $userData['faculty'] = $faculty?->name;
+        }
+        if ($request->filled('study_field')) {
+            $userData['study_field'] = $request->validated('study_field');
+        }
+        if ($request->filled('education_level')) {
+            $userData['education_level'] = $request->validated('education_level');
+        }
+
+        $user = User::create($userData);
+
+        if ($role === UserRole::Professional) {
+            AppointmentProfessional::firstOrCreate(
+                ['user_id' => $user->id],
+                [
+                    'title' => $request->input('professional_title', 'Psychologue / Conseiller'),
+                    'is_available' => true,
+                ]
+            );
+        }
 
         $user->sendEmailVerificationNotification();
 
         return response()->json([
             'message' => 'Compte créé. Vérifiez votre adresse e-mail pour la confirmer.',
-            'user' => $this->present($user),
+            'user' => $this->present($user->fresh()),
             'token' => $user->createToken('mina-app', ['full-access'])->plainTextToken,
         ], 201);
     }
@@ -414,6 +457,46 @@ class AuthController extends Controller
 
     private function present(User $user): array
     {
+        $roleProfile = match ($user->role) {
+            UserRole::Student => [
+                'type' => 'student',
+                'education_level' => $user->education_level,
+                'study_field' => $user->study_field,
+                'university_id' => $user->university_id,
+                'faculty' => $user->faculty,
+                'faculty_id' => $user->faculty_id,
+                'university' => $user->university,
+                'onboarding_completed' => $user->onboarding_completed_at !== null,
+            ],
+            UserRole::Ambassador => [
+                'type' => 'ambassador',
+                'university_id' => $user->university_id,
+                'university' => $user->university,
+                'faculty' => $user->faculty,
+                'faculty_id' => $user->faculty_id,
+                'is_verified' => (bool) $user->is_ambassador_verified,
+                'training_date' => $user->ambassador_training_date,
+                'onboarding_completed' => $user->onboarding_completed_at !== null,
+            ],
+            UserRole::Professional => [
+                'type' => 'professional',
+                'title' => $user->professionalProfile?->title ?? 'Psychologue clinicien',
+                'bio' => $user->professionalProfile?->bio,
+                'phone' => $user->professionalProfile?->phone,
+                'is_available' => (bool) ($user->professionalProfile?->is_available ?? true),
+                'onboarding_completed' => true,
+            ],
+            UserRole::Partner => [
+                'type' => 'partner',
+                'institution_id' => $user->partner_institution_id,
+                'institution_name' => $user->partnerInstitution?->name,
+                'institution_type' => $user->partnerInstitution?->type,
+                'position' => $user->partner_position,
+                'onboarding_completed' => $user->partner_institution_id !== null,
+            ],
+            default => null,
+        };
+
         return [
             'id' => $user->id,
             'name' => $user->name,
@@ -430,7 +513,8 @@ class AuthController extends Controller
                 UserConsent::PERSONAL_DATA => $user->consentStatus(UserConsent::PERSONAL_DATA),
                 UserConsent::MENTAL_HEALTH_DATA => $user->consentStatus(UserConsent::MENTAL_HEALTH_DATA),
             ],
-            'student_profile' => $user->hasRole(UserRole::Student) ? [
+            'role_profile' => $roleProfile,
+            'student_profile' => $user->hasRole(UserRole::Student, UserRole::Ambassador) ? [
                 'education_level' => $user->education_level,
                 'study_field' => $user->study_field,
                 'university_id' => $user->university_id,

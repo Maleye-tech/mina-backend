@@ -7,6 +7,7 @@ use App\Models\OnboardingQuestion;
 use App\Models\University;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Modules\Subscriptions\Models\PartnerInstitution;
 
 class OnboardingController extends Controller
 {
@@ -24,11 +25,45 @@ class OnboardingController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'city', 'type', 'website_url', 'sort_order']);
 
+        $partnerInstitutions = PartnerInstitution::query()
+            ->active()
+            ->get(['id', 'name', 'type', 'code']);
+
+        $roles = [
+            [
+                'id' => 'student',
+                'title' => 'Étudiant',
+                'subtitle' => 'Médecine, pharmacie, odontologie ou filière santé',
+                'icon' => 'graduation-cap',
+            ],
+            [
+                'id' => 'ambassador',
+                'title' => 'Ambassadeur',
+                'subtitle' => 'Étudiant relais formé à l’écoute',
+                'icon' => 'heart-handshake',
+            ],
+            [
+                'id' => 'professional',
+                'title' => 'Professionnel',
+                'subtitle' => 'Psychologue, psychiatre ou conseiller',
+                'icon' => 'stethoscope',
+            ],
+            [
+                'id' => 'partner',
+                'title' => 'Partenaire',
+                'subtitle' => 'Université, CROUS, ONG ou institution',
+                'icon' => 'building-columns',
+            ],
+        ];
+
         $user = $request->user();
 
         return response()->json([
+            'available_roles' => $roles,
             'questions' => $questions,
             'universities' => $universities,
+            'partner_institutions' => $partnerInstitutions,
+            'current_role' => $user->role->value,
             'student_profile' => [
                 'education_level' => $user->education_level,
                 'study_field' => $user->study_field,

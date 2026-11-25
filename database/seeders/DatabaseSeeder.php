@@ -56,6 +56,59 @@ class DatabaseSeeder extends Seeder
         );
 
         User::firstOrCreate(
+            ['email' => 'ambassador@example.com'],
+            [
+                'name' => 'Moussa Sarr',
+                'password' => 'password',
+                'role' => UserRole::Ambassador,
+                'email_verified_at' => now(),
+                'education_level' => '4e année',
+                'study_field' => 'Pharmacie',
+                'university_id' => $ucad?->id,
+                'faculty' => $ucad?->faculties()->value('name'),
+                'faculty_id' => $ucad?->faculties()->value('id'),
+                'is_ambassador_verified' => true,
+                'ambassador_training_date' => now()->subMonths(3),
+                'onboarding_completed_at' => now(),
+            ],
+        );
+
+        $proUser = User::firstOrCreate(
+            ['email' => 'professional@example.com'],
+            [
+                'name' => 'Dr. Cheikh Ndiaye',
+                'password' => 'password',
+                'role' => UserRole::Professional,
+                'email_verified_at' => now(),
+            ],
+        );
+
+        \Modules\Appointments\Models\AppointmentProfessional::firstOrCreate(
+            ['user_id' => $proUser->id],
+            [
+                'title' => 'Psychologue clinicien & psychothérapeute',
+                'bio' => 'Spécialiste de la santé mentale étudiante et de la gestion du stress universitaire.',
+                'phone' => '+221 77 123 45 67',
+                'consultation_duration_minutes' => 45,
+                'is_available' => true,
+            ],
+        );
+
+        $crous = \Modules\Subscriptions\Models\PartnerInstitution::where('code', 'CROUS-DAKAR')->first();
+
+        User::firstOrCreate(
+            ['email' => 'partner@example.com'],
+            [
+                'name' => 'Mme Fatou Sow',
+                'password' => 'password',
+                'role' => UserRole::Partner,
+                'email_verified_at' => now(),
+                'partner_institution_id' => $crous?->id,
+                'partner_position' => 'Directrice des œuvres sociales & santé étudiante (CROUS)',
+            ],
+        );
+
+        User::firstOrCreate(
             ['email' => 'admin@example.com'],
             [
                 'name' => 'Admin Démo',

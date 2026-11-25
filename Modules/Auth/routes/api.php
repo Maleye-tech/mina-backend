@@ -33,7 +33,7 @@ Route::prefix('auth')->group(function () {
         Route::post('email/verification-notification', [AuthController::class, 'resendVerificationEmail'])
             ->middleware('throttle:6,1');
 
-        Route::middleware('role:student')->group(function () {
+        Route::middleware('role:student,ambassador')->group(function () {
             Route::get('onboarding', [OnboardingController::class, 'show']);
             Route::post('onboarding', [AuthController::class, 'completeStudentOnboarding'])
                 ->middleware('consent:personal_data');

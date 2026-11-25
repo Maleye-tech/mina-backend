@@ -11,12 +11,15 @@ use Illuminate\Contracts\Auth\MustVerifyEmail as MustVerifyEmailContract;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\HasApiTokens;
+use Modules\Appointments\Models\AppointmentProfessional;
 use Modules\Auth\Enums\UserRole;
 use Modules\Library\Models\Favorite;
+use Modules\Subscriptions\Models\PartnerInstitution;
 
 class User extends Authenticatable implements FilamentUser, HasAppAuthentication, HasAppAuthenticationRecovery, MustVerifyEmailContract
 {
@@ -41,6 +44,10 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
         'email_notifications',
         'push_notifications',
         'fcm_token',
+        'partner_institution_id',
+        'partner_position',
+        'ambassador_training_date',
+        'is_ambassador_verified',
     ];
 
     protected $hidden = [
@@ -74,6 +81,8 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
             'notifications_enabled' => 'boolean',
             'email_notifications' => 'boolean',
             'push_notifications' => 'boolean',
+            'is_ambassador_verified' => 'boolean',
+            'ambassador_training_date' => 'datetime',
         ];
     }
 
@@ -122,6 +131,16 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
     public function partnerFaculty(): BelongsTo
     {
         return $this->belongsTo(Faculty::class, 'faculty_id');
+    }
+
+    public function partnerInstitution(): BelongsTo
+    {
+        return $this->belongsTo(PartnerInstitution::class, 'partner_institution_id');
+    }
+
+    public function professionalProfile(): HasOne
+    {
+        return $this->hasOne(AppointmentProfessional::class, 'user_id');
     }
 
     public function getAppAuthenticationSecret(): ?string

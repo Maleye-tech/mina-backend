@@ -57,6 +57,6 @@ services:
       - key: BREVO_FROM_EMAIL
         sync: false
       - key: MAIL_FROM_ADDRESS
-        sync: false
+        fromEnvVar: BREVO_FROM_EMAIL
       - key: MAIL_FROM_NAME
         value: Mina

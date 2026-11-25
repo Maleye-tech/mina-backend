@@ -16,3 +16,14 @@ Route::prefix('v1/subscriptions')->group(function (): void {
         Route::post('cancel', [SubscriptionsController::class, 'cancel'])->name('subscriptions.cancel');
     });
 });
+
+Route::prefix('v1/partner')->middleware([
+    'auth:sanctum',
+    'abilities:full-access',
+    'role:partner',
+])->group(function (): void {
+    Route::get('dashboard', [\Modules\Subscriptions\Http\Controllers\PartnerDashboardController::class, 'dashboard'])->name('partner.dashboard');
+    Route::get('access-codes', [\Modules\Subscriptions\Http\Controllers\PartnerDashboardController::class, 'accessCodes'])->name('partner.access-codes');
+    Route::post('access-codes', [\Modules\Subscriptions\Http\Controllers\PartnerDashboardController::class, 'generateAccessCodes'])->name('partner.generate-codes');
+});
+

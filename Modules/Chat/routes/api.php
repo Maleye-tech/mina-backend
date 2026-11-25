@@ -20,7 +20,7 @@ Route::middleware([
         ->middleware('role:student')
         ->name('conversations.request-ambassador');
 
-    Route::middleware('role:student,professional')->prefix('conversations')->name('conversations.')->group(function (): void {
+    Route::middleware('role:student,ambassador,professional')->prefix('conversations')->name('conversations.')->group(function (): void {
         /*
          * Liste et ouverture des conversations de l'utilisateur.
          */

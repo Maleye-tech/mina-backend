@@ -2,6 +2,7 @@
 
 namespace App\Mail;
 
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Symfony\Component\Mailer\SentMessage;
@@ -26,8 +27,22 @@ class BrevoTransport extends AbstractTransport
             throw new RuntimeException('Brevo ne peut envoyer que des messages Symfony Email.');
         }
 
+        $sender = $this->addresses($email->getFrom())[0] ?? null;
+
+        if (! $sender || ! filter_var($sender['email'], FILTER_VALIDATE_EMAIL) || $sender['email'] === 'hello@example.com') {
+            throw new RuntimeException(
+                "Erreur de configuration du serveur : la variable BREVO_FROM_EMAIL (ou MAIL_FROM_ADDRESS) n'est pas configurée avec une adresse email valide sur Render."
+            );
+        }
+
+        if (trim($this->apiKey) === '') {
+            throw new RuntimeException(
+                "Erreur de configuration du serveur : la variable BREVO_API_KEY n'est pas configurée sur Render."
+            );
+        }
+
         $payload = [
-            'sender' => $this->addresses($email->getFrom())[0] ?? throw new RuntimeException('Brevo: expéditeur manquant.'),
+            'sender' => $sender,
             'to' => $this->addresses($email->getTo()),
             'subject' => (string) $email->getSubject(),
             'htmlContent' => $this->body($email->getHtmlBody()),
@@ -54,10 +69,20 @@ class BrevoTransport extends AbstractTransport
             throw new RuntimeException('Brevo: le message ne contient ni HTML ni texte.');
         }
 
-        Http::withHeaders([
-            'api-key' => $this->apiKey,
-            'Accept' => 'application/json',
-        ])->post($this->endpoint, $payload)->throw();
+        try {
+            Http::withHeaders([
+                'api-key' => $this->apiKey,
+                'Accept' => 'application/json',
+            ])->post($this->endpoint, $payload)->throw();
+        } catch (RequestException $e) {
+            $responseBody = $e->response?->json() ?? [];
+            $errorMessage = $responseBody['message'] ?? $e->getMessage();
+
+            throw new RuntimeException(
+                "Brevo a rejeté l'envoi de l'e-mail ({$errorMessage}). Assurez-vous que l'adresse '{$sender['email']}' est bien enregistrée et vérifiée comme expéditeur dans votre compte Brevo (Menu Expéditeurs & IP), et que votre clé BREVO_API_KEY est valide.",
+                previous: $e
+            );
+        }
     }
 
     /**

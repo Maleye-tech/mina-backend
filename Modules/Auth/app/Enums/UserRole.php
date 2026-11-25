@@ -10,6 +10,7 @@ enum UserRole: string implements HasColor, HasLabel
     case Student = 'student';
     case Ambassador = 'ambassador';
     case Professional = 'professional';
+    case Partner = 'partner';
     case Admin = 'admin';
 
     public function label(): string
@@ -18,6 +19,7 @@ enum UserRole: string implements HasColor, HasLabel
             self::Student => 'Étudiant',
             self::Ambassador => 'Ambassadeur',
             self::Professional => 'Professionnel de santé mentale',
+            self::Partner => 'Partenaire institutionnel',
             self::Admin => 'Administrateur',
         };
     }
@@ -33,6 +35,7 @@ enum UserRole: string implements HasColor, HasLabel
             self::Student => 'gray',
             self::Ambassador => 'warning',
             self::Professional => 'info',
+            self::Partner => 'success',
             self::Admin => 'danger',
         };
     }
