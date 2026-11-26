@@ -15,8 +15,8 @@ class AlertController extends Controller
     {
         $query = Alert::query()->where('user_id', $request->user()->id);
 
-        if ($status = $request->string('status')) {
-            $query->where('status', $status);
+        if ($request->filled('status')) {
+            $query->where('status', $request->string('status')->toString());
         }
 
         $perPage = min($request->integer('per_page', 15), 100);

@@ -3,11 +3,14 @@
 namespace Modules\Chat\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Gate;
+use Modules\Appointments\Enums\AppointmentStatus;
+use Modules\Auth\Enums\UserRole;
 use Modules\Chat\Http\Requests\IndexConversationsRequest;
 use Modules\Chat\Http\Requests\StoreConversationRequest;
 use Modules\Chat\Http\Resources\ConversationResource;
@@ -24,9 +27,11 @@ class ConversationController extends Controller
      */
     public function index(IndexConversationsRequest $request): AnonymousResourceCollection
     {
+        Gate::authorize('viewAny', Conversation::class);
+
         $user = $request->user();
 
-        $conversations = $this->baseQuery($user->id)
+        $conversations = $this->baseQuery($user)
             ->orderByRaw('COALESCE(last_message_at, created_at) DESC')
             ->paginate(min($request->integer('per_page', self::DEFAULT_PER_PAGE), self::MAX_PER_PAGE));
 
@@ -41,7 +46,7 @@ class ConversationController extends Controller
         Gate::authorize('view', $conversation);
 
         return ConversationResource::make(
-            $this->baseQuery($request->user()->id)
+            $this->baseQuery($request->user())
                 ->whereKey($conversation->id)
                 ->firstOrFail(),
         );
@@ -57,6 +62,28 @@ class ConversationController extends Controller
 
         [$one, $two] = [$user->id, $participantId];
         [$one, $two] = $one < $two ? [$one, $two] : [$two, $one];
+
+        if ($user->hasRole(UserRole::Professional)) {
+            Gate::authorize('viewAny', Conversation::class);
+
+            $conversation = $this->baseQuery($user)
+                ->where('participant_one_id', $one)
+                ->where('participant_two_id', $two)
+                ->first();
+
+            if ($conversation === null) {
+                return response()->json([
+                    'message' => 'Cette conversation est introuvable.',
+                ], 404);
+            }
+
+            Gate::authorize('view', $conversation);
+
+            return response()->json([
+                'message' => 'Conversation existante.',
+                'data' => ConversationResource::make($conversation),
+            ]);
+        }
 
         $created = false;
 
@@ -84,20 +111,12 @@ class ConversationController extends Controller
     {
         $user = $request->user();
 
-        $ambassador = \App\Models\User::query()
-            ->where('role', \Modules\Auth\Enums\UserRole::Ambassador->value)
+        $ambassador = User::query()
+            ->where('role', UserRole::Ambassador->value)
             ->where('is_active', true)
             ->where('id', '!=', $user->id)
             ->inRandomOrder()
             ->first();
-
-        if (! $ambassador) {
-            $ambassador = \App\Models\User::query()
-                ->where('role', \Modules\Auth\Enums\UserRole::Professional->value)
-                ->where('is_active', true)
-                ->where('id', '!=', $user->id)
-                ->first();
-        }
 
         if (! $ambassador) {
             return response()->json([
@@ -124,15 +143,25 @@ class ConversationController extends Controller
     /**
      * @return Builder<Conversation>
      */
-    private function baseQuery(int $userId): Builder
+    private function baseQuery(User $user): Builder
     {
-        return Conversation::query()
+        $query = Conversation::query()
             ->where(fn (Builder $query) => $query
-                ->where('participant_one_id', $userId)
-                ->orWhere('participant_two_id', $userId))
-            ->with(['participantOne', 'participantTwo', 'lastMessage'])
-            ->withCount(['messages as unread_count' => fn (Builder $query) => $query
-                ->where('sender_id', '!=', $userId)
-                ->whereNull('read_at')]);
+                ->where('participant_one_id', $user->id)
+                ->orWhere('participant_two_id', $user->id))
+            ->with(['participantOne', 'participantTwo', 'lastMessage', 'appointment']);
+
+        if ($user->hasRole(UserRole::Professional)) {
+            $query->whereHas('appointment', fn (Builder $query) => $query
+                ->where('professional_user_id', $user->id)
+                ->whereIn('status', [
+                    AppointmentStatus::Confirmed->value,
+                    AppointmentStatus::Completed->value,
+                ]));
+        }
+
+        return $query->withCount(['messages as unread_count' => fn (Builder $query) => $query
+            ->where('sender_id', '!=', $user->id)
+            ->whereNull('read_at')]);
     }
 }

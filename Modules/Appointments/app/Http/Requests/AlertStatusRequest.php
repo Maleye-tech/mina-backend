@@ -14,7 +14,7 @@ class AlertStatusRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status' => ['required', 'string', 'in:acknowledged,resolved'],
+            'status' => ['required', 'string', 'in:acknowledged,resolved,handled'],
         ];
     }
 }

@@ -21,7 +21,6 @@ class MessageResource extends JsonResource
         return [
             'id' => $this->id,
             'conversation_id' => $this->conversation_id,
-            'sender_id' => $this->sender_id,
             'sender_pseudonym' => $this->sender?->pseudonym ?: 'Participant',
             'is_mine' => $user ? $this->sender_id === $user->id : false,
             'body' => $this->body,

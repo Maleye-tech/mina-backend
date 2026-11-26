@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Modules\Appointments\Models\AppointmentProfessional;
 use Modules\Appointments\Models\ConsultationRequest;
+use Modules\Appointments\Models\ProfessionalProfile;
 use Modules\Auth\Enums\UserRole;
 use Tests\TestCase;
 
@@ -17,6 +18,14 @@ class ConsultationRequestApiTest extends TestCase
     {
         $this->app['auth']->forgetGuards();
         $user = User::factory()->create(['role' => UserRole::Professional]);
+        ProfessionalProfile::query()->create([
+            'user_id' => $user->id,
+            'display_name' => $user->name,
+            'specialty' => 'psychologue',
+            'languages' => ['Français'],
+            'is_verified' => true,
+            'charter_accepted_at' => now(),
+        ]);
         $token = $user->createToken('consultation-pro-test', ['full-access']);
         $this->withToken($token->plainTextToken);
 
@@ -78,6 +87,32 @@ class ConsultationRequestApiTest extends TestCase
         ])->assertOk()
             ->assertJsonPath('message', 'Demande déclinée.')
             ->assertJsonPath('consultation.status', 'declined');
+    }
+
+    public function test_professional_receives_only_anonymous_student_identity(): void
+    {
+        $user = $this->actingAsProfessional();
+        $pro = AppointmentProfessional::factory()->create(['user_id' => $user->id]);
+        $student = User::factory()->create([
+            'role' => UserRole::Student,
+            'name' => 'Identité Réelle Étudiante',
+            'email' => 'identite.reelle@example.com',
+            'pseudonym' => 'ColombeSereine',
+        ]);
+        ConsultationRequest::factory()->create([
+            'student_id' => $student->id,
+            'professional_id' => $pro->id,
+        ]);
+
+        $response = $this->getJson('/api/v1/appointments/consultation-requests')
+            ->assertOk()
+            ->assertJsonPath('data.0.student.pseudonym', 'ColombeSereine')
+            ->assertJsonMissingPath('data.0.student.name')
+            ->assertJsonMissingPath('data.0.student_id');
+
+        $this->assertStringStartsWith('anon_', $response->json('data.0.student.id'));
+        $this->assertStringNotContainsString($student->name, $response->getContent());
+        $this->assertStringNotContainsString($student->email, $response->getContent());
     }
 
     public function test_student_cannot_access_consultation_requests(): void

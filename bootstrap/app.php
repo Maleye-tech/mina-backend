@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\AddEtagHeader;
+use App\Http\Middleware\EnsureProfessionalIsVerified;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -7,6 +9,7 @@ use Illuminate\Http\Request;
 use Laravel\Sanctum\Http\Middleware\CheckAbilities;
 use Modules\Auth\Http\Middleware\EnsureUserHasCurrentConsent;
 use Modules\Auth\Http\Middleware\EnsureUserHasRole;
+use Modules\Subscriptions\Http\Middleware\EnsureSubscribed;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -25,8 +28,9 @@ return Application::configure(basePath: dirname(__DIR__))
             'abilities' => CheckAbilities::class,
             'consent' => EnsureUserHasCurrentConsent::class,
             'role' => EnsureUserHasRole::class,
-            'subscribed' => \Modules\Subscriptions\Http\Middleware\EnsureSubscribed::class,
-            'etag' => \App\Http\Middleware\AddEtagHeader::class,
+            'professional.verified' => EnsureProfessionalIsVerified::class,
+            'subscribed' => EnsureSubscribed::class,
+            'etag' => AddEtagHeader::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

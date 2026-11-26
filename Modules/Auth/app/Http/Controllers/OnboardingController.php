@@ -43,12 +43,6 @@ class OnboardingController extends Controller
                 'icon' => 'heart-handshake',
             ],
             [
-                'id' => 'professional',
-                'title' => 'Professionnel',
-                'subtitle' => 'Psychologue, psychiatre ou conseiller',
-                'icon' => 'stethoscope',
-            ],
-            [
                 'id' => 'partner',
                 'title' => 'Partenaire',
                 'subtitle' => 'Université, CROUS, ONG ou institution',

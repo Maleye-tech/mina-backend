@@ -8,6 +8,7 @@ use Modules\Appointments\Enums\AppointmentStatus;
 use Modules\Appointments\Models\Appointment;
 use Modules\Appointments\Models\AppointmentProfessional;
 use Modules\Appointments\Models\AppointmentSlot;
+use Modules\Appointments\Models\ProfessionalProfile;
 use Modules\Auth\Enums\UserRole;
 use Tests\TestCase;
 
@@ -20,6 +21,18 @@ class AppointmentsApiTest extends TestCase
         $this->app['auth']->forgetGuards();
 
         $user = User::factory()->create(['role' => $role]);
+
+        if ($role === UserRole::Professional) {
+            ProfessionalProfile::query()->create([
+                'user_id' => $user->id,
+                'display_name' => $user->name,
+                'specialty' => 'psychologue',
+                'languages' => ['Français'],
+                'is_verified' => true,
+                'charter_accepted_at' => now(),
+            ]);
+        }
+
         $token = $user->createToken('appointments-test', ['full-access']);
 
         $this->withToken($token->plainTextToken);
@@ -153,5 +166,74 @@ class AppointmentsApiTest extends TestCase
             ->assertOk();
 
         $this->assertNull($response->json('data.confidential_notes'));
+    }
+
+    public function test_professional_receives_only_anonymous_student_identity_on_legacy_endpoint(): void
+    {
+        $professional = $this->actingAsUser(UserRole::Professional);
+        $student = User::factory()->create([
+            'role' => UserRole::Student,
+            'name' => 'Identité Réelle Étudiante',
+            'email' => 'identite.reelle@example.com',
+            'pseudonym' => 'ColombeSereine',
+        ]);
+        $pro = AppointmentProfessional::factory()->create(['user_id' => $professional->id]);
+        $appointment = Appointment::factory()->create([
+            'student_id' => $student->id,
+            'professional_id' => $pro->id,
+            'student_notes' => 'Motif strictement personnel',
+        ]);
+
+        $this->assertSame(UserRole::Professional, $professional->fresh()->role);
+        $this->assertDatabaseHas('appointment_professionals', ['id' => $pro->id, 'user_id' => $professional->id]);
+        $this->assertDatabaseHas('appointments', ['id' => $appointment->id, 'professional_id' => $pro->id]);
+
+        $response = $this->getJson('/api/v1/appointments')
+            ->assertOk()
+            ->assertJsonPath('data.0.student.pseudonym', 'ColombeSereine')
+            ->assertJsonMissingPath('data.0.student.name')
+            ->assertJsonPath('data.0.student_notes', null);
+
+        $this->assertStringStartsWith('anon_', $response->json('data.0.student.id'));
+        $this->assertNotSame((string) $student->id, $response->json('data.0.student.id'));
+        $this->assertStringNotContainsString($student->name, $response->getContent());
+        $this->assertStringNotContainsString($student->email, $response->getContent());
+        $this->assertStringNotContainsString('Motif strictement personnel', $response->getContent());
+    }
+
+    public function test_legacy_meeting_links_are_hidden_until_confirmation(): void
+    {
+        $professional = $this->actingAsUser(UserRole::Professional);
+        $student = User::factory()->create(['role' => UserRole::Student]);
+        $pro = AppointmentProfessional::factory()->create(['user_id' => $professional->id]);
+        Appointment::factory()->create([
+            'student_id' => $student->id,
+            'professional_id' => $pro->id,
+            'status' => AppointmentStatus::Requested,
+            'meeting_link' => 'https://meeting.example.test/requested',
+            'meeting_url' => 'https://meeting.example.test/requested',
+            'confidential_notes' => 'Note confidentielle',
+        ]);
+
+        $this->getJson('/api/v1/appointments/')
+            ->assertOk()
+            ->assertJsonPath('data.0.meeting_link', null)
+            ->assertJsonPath('data.0.meeting_url', null)
+            ->assertJsonPath('data.0.confidential_notes', null);
+    }
+
+    public function test_student_still_receives_own_identity_on_legacy_endpoint(): void
+    {
+        $student = $this->actingAsUser(UserRole::Student);
+        $pro = AppointmentProfessional::factory()->create();
+        $appointment = Appointment::factory()->create([
+            'student_id' => $student->id,
+            'professional_id' => $pro->id,
+        ]);
+
+        $this->getJson("/api/v1/appointments/{$appointment->id}")
+            ->assertOk()
+            ->assertJsonPath('data.student.id', $student->id)
+            ->assertJsonPath('data.student.name', $student->name);
     }
 }

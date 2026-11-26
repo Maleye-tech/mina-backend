@@ -10,18 +10,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Modules\Chat\Database\Factories\MessageFactory;
 
-/**
- * Message appartenant à une conversation directe.
- */
 class Message extends Model
 {
     use HasFactory, SoftDeletes;
 
     protected $table = 'chat_messages';
 
-    /**
-     * @var array<int, string>
-     */
     protected $fillable = [
         'conversation_id',
         'sender_id',
@@ -37,6 +31,7 @@ class Message extends Model
             'read_at' => 'datetime',
             'is_crisis' => 'boolean',
             'crisis_keywords' => 'array',
+            'body' => 'encrypted',
         ];
     }
 

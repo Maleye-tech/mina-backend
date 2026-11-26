@@ -5,9 +5,12 @@ namespace Modules\Appointments\Http\Controllers;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Modules\Appointments\Http\Requests\PrivateNoteRequest;
 use Modules\Appointments\Http\Resources\PrivateNoteResource;
+use Modules\Appointments\Models\Appointment;
 use Modules\Appointments\Models\PrivateNote;
+use Modules\Chat\Models\Conversation;
 
 class PrivateNoteController extends Controller
 {
@@ -23,8 +26,28 @@ class PrivateNoteController extends Controller
         ]);
     }
 
+    public function show(Request $request, int $id): JsonResponse
+    {
+        $note = PrivateNote::query()
+            ->where('user_id', $request->user()->id)
+            ->whereKey($id)
+            ->firstOrFail();
+
+        return response()->json([
+            'note' => PrivateNoteResource::make($note),
+        ]);
+    }
+
     public function store(PrivateNoteRequest $request): JsonResponse
     {
+        if ($request->filled('appointment_id')) {
+            Gate::authorize('view', Appointment::query()->findOrFail($request->integer('appointment_id')));
+        }
+
+        if ($request->filled('conversation_id')) {
+            Gate::authorize('view', Conversation::query()->findOrFail($request->integer('conversation_id')));
+        }
+
         $note = PrivateNote::create([
             'user_id' => $request->user()->id,
             'appointment_id' => $request->input('appointment_id'),

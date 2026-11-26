@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Modules\Auth\Enums\UserRole;
 use Modules\Chat\Events\MessageSent;
 use Modules\Chat\Http\Requests\StoreMessageRequest;
 use Modules\Chat\Http\Resources\MessageResource;
@@ -33,6 +34,14 @@ class MessageController extends Controller
     public function index(Request $request, Conversation $conversation): AnonymousResourceCollection
     {
         Gate::authorize('view', $conversation);
+
+        $request->validate([
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:'.self::MAX_PER_PAGE],
+        ], [
+            'per_page.integer' => 'Le nombre d’éléments par page doit être un entier.',
+            'per_page.min' => 'Le nombre d’éléments par page doit être au moins 1.',
+            'per_page.max' => 'Le nombre d’éléments par page ne peut pas dépasser '.self::MAX_PER_PAGE.'.',
+        ]);
 
         $user = $request->user();
 
@@ -60,7 +69,14 @@ class MessageController extends Controller
         $crisisAnalysis = $this->crisisDetector->analyze($body);
 
         $message = DB::transaction(function () use ($request, $conversation, $body, $crisisAnalysis) {
-            $message = $conversation->messages()->create([
+            $lockedConversation = Conversation::query()
+                ->whereKey($conversation->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            Gate::authorize('send', $lockedConversation);
+
+            $message = $lockedConversation->messages()->create([
                 'sender_id' => $request->user()->id,
                 'body' => $body,
                 'is_crisis' => $crisisAnalysis['is_crisis'],
@@ -73,7 +89,7 @@ class MessageController extends Controller
                 $conversationData['crisis_flagged_at'] = now();
             }
 
-            $conversation->update($conversationData);
+            $lockedConversation->update($conversationData);
 
             return $message;
         });
@@ -103,7 +119,11 @@ class MessageController extends Controller
     {
         Gate::authorize('view', $conversation);
 
-        if ($message->sender_id !== $request->user()->id && ! $request->user()->hasRole(\Modules\Auth\Enums\UserRole::Admin)) {
+        if ($message->conversation_id !== $conversation->id) {
+            abort(404, 'Ce message est introuvable.');
+        }
+
+        if ($message->sender_id !== $request->user()->id && ! $request->user()->hasRole(UserRole::Admin)) {
             abort(403, 'Vous ne pouvez supprimer que vos propres messages.');
         }
 
@@ -120,6 +140,10 @@ class MessageController extends Controller
     public function report(Request $request, Conversation $conversation, Message $message): JsonResponse
     {
         Gate::authorize('view', $conversation);
+
+        if ($message->conversation_id !== $conversation->id) {
+            abort(404, 'Ce message est introuvable.');
+        }
 
         $request->validate([
             'reason' => ['required', 'string', 'max:500'],

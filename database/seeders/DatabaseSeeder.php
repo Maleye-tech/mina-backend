@@ -6,10 +6,16 @@ use App\Models\University;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Modules\Appointments\Database\Seeders\AppointmentsDemoSeeder;
+use Modules\Appointments\Database\Seeders\MinaCareDemoSeeder;
+use Modules\Appointments\Models\AppointmentProfessional;
 use Modules\Assessment\Database\Seeders\AssessmentDemoSeeder;
 use Modules\Auth\Database\Seeders\AuthOnboardingSeeder;
 use Modules\Auth\Enums\UserRole;
+use Modules\Events\Database\Seeders\EventsDemoSeeder;
 use Modules\Library\Database\Seeders\LibraryDemoSeeder;
+use Modules\Subscriptions\Database\Seeders\SubscriptionsDatabaseSeeder;
+use Modules\Subscriptions\Models\PartnerInstitution;
 use Modules\WellBeing\Database\Seeders\WellBeingDemoSeeder;
 
 class DatabaseSeeder extends Seeder
@@ -25,9 +31,14 @@ class DatabaseSeeder extends Seeder
         $this->call(LibraryDemoSeeder::class);
         $this->call(AssessmentDemoSeeder::class);
         $this->call(WellBeingDemoSeeder::class);
-        $this->call(\Modules\Subscriptions\Database\Seeders\SubscriptionsDatabaseSeeder::class);
-        $this->call(\Modules\Appointments\Database\Seeders\AppointmentsDemoSeeder::class);
-        $this->call(\Modules\Events\Database\Seeders\EventsDemoSeeder::class);
+        $this->call(SubscriptionsDatabaseSeeder::class);
+        $this->call(AppointmentsDemoSeeder::class);
+
+        if (app()->environment(['local', 'testing'])) {
+            $this->call(MinaCareDemoSeeder::class);
+        }
+
+        $this->call(EventsDemoSeeder::class);
 
         User::firstOrCreate(
             ['email' => 'test@example.com'],
@@ -83,7 +94,7 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
-        \Modules\Appointments\Models\AppointmentProfessional::firstOrCreate(
+        AppointmentProfessional::firstOrCreate(
             ['user_id' => $proUser->id],
             [
                 'title' => 'Psychologue clinicien & psychothérapeute',
@@ -94,7 +105,7 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
-        $crous = \Modules\Subscriptions\Models\PartnerInstitution::where('code', 'CROUS-DAKAR')->first();
+        $crous = PartnerInstitution::where('code', 'CROUS-DAKAR')->first();
 
         User::firstOrCreate(
             ['email' => 'partner@example.com'],

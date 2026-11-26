@@ -4,6 +4,8 @@ namespace Modules\Chat\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Modules\Appointments\Http\Resources\AnonymousStudentResource;
+use Modules\Auth\Enums\UserRole;
 use Modules\Chat\Models\Conversation;
 
 /**
@@ -16,16 +18,21 @@ class ConversationResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $participant = $this->participant_one_id === $request->user()?->id
+        $user = $request->user();
+        $participant = $this->participant_one_id === $user?->id
             ? $this->participantTwo
             : $this->participantOne;
+        $anonymousStudent = $user?->hasRole(UserRole::Professional)
+            && $participant->hasRole(UserRole::Student)
+            ? AnonymousStudentResource::make($participant)->resolve()
+            : null;
 
         return [
             'id' => $this->id,
             'participant' => [
-                'id' => $participant->id,
-                'name' => $participant->name,
-                'pseudonym' => $participant->pseudonym,
+                'id' => $anonymousStudent['id'] ?? $participant->id,
+                'name' => $anonymousStudent['pseudonym'] ?? $participant->name,
+                'pseudonym' => $anonymousStudent['pseudonym'] ?? $participant->pseudonym,
                 'role' => $participant->role->value,
                 'role_label' => $participant->role->getLabel(),
             ],

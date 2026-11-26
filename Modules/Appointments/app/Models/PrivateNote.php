@@ -25,6 +25,7 @@ class PrivateNote extends Model
     protected $casts = [
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'body' => 'encrypted',
     ];
 
     public function user(): BelongsTo

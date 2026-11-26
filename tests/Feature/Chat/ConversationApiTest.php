@@ -3,6 +3,7 @@
 namespace Tests\Feature\Chat;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Modules\Appointments\Enums\AppointmentStatus;
 use Modules\Auth\Enums\UserRole;
 use Modules\Chat\Models\Conversation;
 use Modules\Chat\Models\Message;
@@ -60,7 +61,7 @@ class ConversationApiTest extends TestCase
     public function test_a_student_can_start_a_conversation_with_a_professional(): void
     {
         $student = $this->userWithRole(UserRole::Student);
-        $professional = $this->userWithRole(UserRole::Professional);
+        $professional = $this->verifiedProfessional();
 
         $this->withToken($this->tokenFor($student))
             ->postJson('/api/v1/conversations', ['participant_id' => $professional->id])
@@ -70,15 +71,16 @@ class ConversationApiTest extends TestCase
             ->assertJsonPath('data.unread_count', 0);
     }
 
-    public function test_a_professional_can_start_a_conversation_with_a_student(): void
+    public function test_a_professional_cannot_start_an_arbitrary_conversation_with_a_student(): void
     {
         $student = $this->userWithRole(UserRole::Student);
-        $professional = $this->userWithRole(UserRole::Professional);
+        $professional = $this->verifiedProfessional();
 
         $this->withToken($this->tokenFor($professional))
             ->postJson('/api/v1/conversations', ['participant_id' => $student->id])
-            ->assertCreated()
-            ->assertJsonPath('data.participant.id', $student->id);
+            ->assertNotFound();
+
+        $this->assertSame(0, Conversation::count());
     }
 
     public function test_starting_the_same_conversation_twice_returns_the_existing_one(): void
@@ -90,10 +92,8 @@ class ConversationApiTest extends TestCase
             ->postJson('/api/v1/conversations', ['participant_id' => $professional->id])
             ->assertCreated();
 
-        $this->app['auth']->forgetGuards();
-
-        $this->withToken($this->tokenFor($professional))
-            ->postJson('/api/v1/conversations', ['participant_id' => $student->id])
+        $this->withToken($this->tokenFor($student))
+            ->postJson('/api/v1/conversations', ['participant_id' => $professional->id])
             ->assertOk()
             ->assertJsonPath('message', 'Conversation existante.')
             ->assertJsonPath('data.id', $first->json('data.id'));
@@ -140,6 +140,230 @@ class ConversationApiTest extends TestCase
         $this->withToken($this->tokenFor($stranger))
             ->getJson("/api/v1/conversations/{$conversation->id}")
             ->assertNotFound();
+    }
+
+    public function test_a_professional_can_open_an_existing_appointment_conversation(): void
+    {
+        [$student, $professional, , $conversation] = $this->appointmentConversation();
+
+        $this->withToken($this->tokenFor($professional))
+            ->postJson('/api/v1/conversations', ['participant_id' => $student->id])
+            ->assertOk()
+            ->assertJsonPath('message', 'Conversation existante.')
+            ->assertJsonPath('data.id', $conversation->id);
+
+        $this->assertSame(1, Conversation::count());
+    }
+
+    public function test_professional_conversation_list_only_contains_authorized_appointments(): void
+    {
+        $professional = $this->verifiedProfessional();
+        $confirmed = $this->appointmentConversation(null, $professional, AppointmentStatus::Confirmed)[3];
+        $completed = $this->appointmentConversation(null, $professional, AppointmentStatus::Completed)[3];
+        $this->appointmentConversation(null, $professional, AppointmentStatus::Requested);
+        $this->appointmentConversation(null, $professional, AppointmentStatus::Declined);
+        $this->appointmentConversation(null, $this->verifiedProfessional(), AppointmentStatus::Confirmed);
+        $this->existingConversation(null, $professional);
+
+        $response = $this->withToken($this->tokenFor($professional))
+            ->getJson('/api/v1/conversations')
+            ->assertOk()
+            ->assertJsonCount(2, 'data');
+
+        $this->assertEqualsCanonicalizing(
+            [$confirmed->id, $completed->id],
+            collect($response->json('data'))->pluck('id')->all(),
+        );
+    }
+
+    public function test_professional_sees_only_anonymized_student_identity(): void
+    {
+        $student = $this->userWithRole(UserRole::Student, [
+            'name' => 'Nom Réel Secret',
+            'email' => 'secret@universite.sn',
+            'university' => 'Université Secrète',
+            'pseudonym' => 'ColombeSereine',
+        ]);
+        [$student, $professional, , $conversation] = $this->appointmentConversation($student);
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'sender_id' => $student->id,
+            'body' => 'Bonjour Docteur.',
+        ]);
+
+        $response = $this->withToken($this->tokenFor($professional))
+            ->getJson("/api/v1/conversations/{$conversation->id}")
+            ->assertOk()
+            ->assertJsonPath('data.participant.name', 'ColombeSereine')
+            ->assertJsonPath('data.participant.pseudonym', 'ColombeSereine')
+            ->assertJsonMissingPath('data.last_message.sender_id');
+
+        $anonymousId = $response->json('data.participant.id');
+        $this->assertStringStartsWith('anon_', $anonymousId);
+        $this->assertNotSame($student->id, $anonymousId);
+        foreach (['Nom Réel Secret', 'secret@universite.sn', 'Université Secrète'] as $secret) {
+            $this->assertStringNotContainsString($secret, $response->getContent());
+        }
+    }
+
+    public function test_professional_cannot_access_unlinked_or_unowned_conversations(): void
+    {
+        $professional = $this->verifiedProfessional();
+        [$student, , , $unlinked] = $this->appointmentConversation(null, $professional);
+        $unlinked->update(['appointment_id' => null]);
+
+        $this->withToken($this->tokenFor($professional))
+            ->getJson("/api/v1/conversations/{$unlinked->id}")
+            ->assertNotFound();
+        $this->withToken($this->tokenFor($professional))
+            ->postJson("/api/v1/conversations/{$unlinked->id}/messages", ['body' => 'Accès interdit.'])
+            ->assertNotFound();
+
+        [$student, $owner, , $unowned] = $this->appointmentConversation();
+        $intruder = $this->verifiedProfessional();
+        $unowned->update([
+            'participant_one_id' => min($student->id, $intruder->id),
+            'participant_two_id' => max($student->id, $intruder->id),
+        ]);
+
+        $this->withToken($this->tokenFor($intruder))
+            ->getJson("/api/v1/conversations/{$unowned->id}")
+            ->assertNotFound();
+        $this->withToken($this->tokenFor($intruder))
+            ->getJson('/api/v1/conversations')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $this->assertNotSame($owner->id, $intruder->id);
+        $this->assertSame(0, Message::count());
+    }
+
+    #[DataProvider('ineligibleProfessionalStates')]
+    public function test_professional_chat_requires_an_active_verified_profile_and_accepted_charter(string $state): void
+    {
+        [$student, $professional, , $conversation] = $this->appointmentConversation();
+
+        match ($state) {
+            'inactive' => $professional->update(['is_active' => false]),
+            'unverified' => $professional->professionalCareProfile->update(['is_verified' => false]),
+            'unchartered' => $professional->professionalCareProfile->update(['charter_accepted_at' => null]),
+        };
+
+        $this->withToken($this->tokenFor($professional))
+            ->getJson("/api/v1/conversations/{$conversation->id}")
+            ->assertForbidden();
+        $this->withToken($this->tokenFor($professional))
+            ->getJson('/api/v1/conversations')
+            ->assertForbidden();
+        $this->withToken($this->tokenFor($professional))
+            ->postJson("/api/v1/conversations/{$conversation->id}/messages", ['body' => 'Message interdit.'])
+            ->assertForbidden();
+        $this->withToken($this->tokenFor($professional))
+            ->postJson('/api/v1/conversations', ['participant_id' => $student->id])
+            ->assertForbidden();
+
+        $this->assertSame(0, Message::count());
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    public static function ineligibleProfessionalStates(): array
+    {
+        return [
+            'inactive' => ['inactive'],
+            'unverified' => ['unverified'],
+            'unchartered' => ['unchartered'],
+        ];
+    }
+
+    #[DataProvider('professionalConversationStatuses')]
+    public function test_professional_read_and_send_permissions_follow_appointment_status(
+        AppointmentStatus $status,
+        int $readStatus,
+        int $sendStatus,
+    ): void {
+        [, $professional, , $conversation] = $this->appointmentConversation(status: $status);
+
+        $this->withToken($this->tokenFor($professional))
+            ->getJson("/api/v1/conversations/{$conversation->id}/messages")
+            ->assertStatus($readStatus);
+        $this->withToken($this->tokenFor($professional))
+            ->postJson("/api/v1/conversations/{$conversation->id}/messages", ['body' => 'Message professionnel.'])
+            ->assertStatus($sendStatus);
+
+        $this->assertSame($sendStatus === 201 ? 1 : 0, Message::count());
+    }
+
+    /**
+     * @return array<string, array<int, AppointmentStatus|int>>
+     */
+    public static function professionalConversationStatuses(): array
+    {
+        return [
+            'requested' => [AppointmentStatus::Requested, 403, 403],
+            'confirmed' => [AppointmentStatus::Confirmed, 200, 201],
+            'completed' => [AppointmentStatus::Completed, 200, 403],
+        ];
+    }
+
+    #[DataProvider('studentConversationStatuses')]
+    public function test_student_read_and_send_permissions_follow_appointment_status(
+        AppointmentStatus $status,
+        int $readStatus,
+        int $sendStatus,
+    ): void {
+        [$student, , , $conversation] = $this->appointmentConversation(status: $status);
+
+        $this->withToken($this->tokenFor($student))
+            ->getJson("/api/v1/conversations/{$conversation->id}/messages")
+            ->assertStatus($readStatus);
+        $this->withToken($this->tokenFor($student))
+            ->postJson("/api/v1/conversations/{$conversation->id}/messages", ['body' => 'Message étudiant.'])
+            ->assertStatus($sendStatus);
+
+        $this->assertSame($sendStatus === 201 ? 1 : 0, Message::count());
+    }
+
+    /**
+     * @return array<string, array<int, AppointmentStatus|int>>
+     */
+    public static function studentConversationStatuses(): array
+    {
+        return [
+            'requested' => [AppointmentStatus::Requested, 403, 403],
+            'confirmed' => [AppointmentStatus::Confirmed, 200, 201],
+            'completed' => [AppointmentStatus::Completed, 200, 403],
+        ];
+    }
+
+    public function test_reporting_a_message_from_another_conversation_is_rejected(): void
+    {
+        [$student, , $conversation] = $this->existingConversation();
+        [, $otherProfessional, $otherConversation] = $this->existingConversation();
+        $message = Message::factory()->create([
+            'conversation_id' => $otherConversation->id,
+            'sender_id' => $otherProfessional->id,
+            'body' => 'Message privé d’une autre conversation.',
+        ]);
+
+        $this->withToken($this->tokenFor($student))
+            ->postJson("/api/v1/conversations/{$conversation->id}/messages/{$message->id}/report", [
+                'reason' => 'Signalement de test.',
+            ])
+            ->assertNotFound();
+
+        $this->assertDatabaseCount('chat_reports', 0);
+    }
+
+    public function test_message_pagination_rejects_invalid_values(): void
+    {
+        [$student, , $conversation] = $this->existingConversation();
+
+        $this->withToken($this->tokenFor($student))
+            ->getJson("/api/v1/conversations/{$conversation->id}/messages?per_page=abc")
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('per_page');
     }
 
     public function test_a_participant_can_view_the_conversation_detail(): void
@@ -240,7 +464,8 @@ class ConversationApiTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('message', 'Message envoyé.')
             ->assertJsonPath('data.body', 'Journée très chargée...')
-            ->assertJsonPath('data.sender_id', $student->id);
+            ->assertJsonPath('data.is_mine', true)
+            ->assertJsonMissingPath('data.sender_id');
 
         $conversation->refresh();
 

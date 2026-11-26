@@ -25,8 +25,8 @@ class ConsultationRequestController extends Controller
             ->forProfessional($professional->id)
             ->with('student');
 
-        if ($status = $request->string('status')) {
-            $query->where('status', $status);
+        if ($request->filled('status')) {
+            $query->where('status', $request->string('status')->toString());
         }
 
         $perPage = min($request->integer('per_page', 15), 100);
@@ -59,7 +59,7 @@ class ConsultationRequestController extends Controller
 
         return response()->json([
             'message' => 'Demande acceptée.',
-            'consultation' => ConsultationRequestResource::make($consultation->fresh()),
+            'consultation' => ConsultationRequestResource::make($consultation->fresh(['student'])),
         ]);
     }
 
@@ -83,7 +83,7 @@ class ConsultationRequestController extends Controller
 
         return response()->json([
             'message' => 'Demande déclinée.',
-            'consultation' => ConsultationRequestResource::make($consultation->fresh()),
+            'consultation' => ConsultationRequestResource::make($consultation->fresh(['student'])),
         ]);
     }
 
@@ -91,9 +91,11 @@ class ConsultationRequestController extends Controller
     {
         $professional = AppointmentProfessional::query()->where('user_id', $user->id)->first();
 
-        if ($professional === null) {
-            abort(403, 'Vous devez être un professionnel de santé mentale.');
-        }
+        abort_unless(
+            $user->is_active && $professional?->canOpenSlots(),
+            403,
+            'Votre profil doit être vérifié et votre charte acceptée pour utiliser les demandes de consultation.',
+        );
 
         return $professional;
     }

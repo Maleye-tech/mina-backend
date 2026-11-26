@@ -41,11 +41,7 @@ class CrisisDetectorService
         return [
             'is_crisis' => $isCrisis,
             'keywords' => $detected,
-            'emergency_contacts' => $isCrisis ? [
-                ['name' => 'Ligne d\'écoute Mina Care Urgence', 'number' => '1515'],
-                ['name' => 'SAMU Sénégal', 'number' => '15'],
-                ['name' => 'Centre National Hospitalier Psychiatrique de Thiaroye', 'number' => '+221 33 834 04 43'],
-            ] : [],
+            'emergency_contacts' => $isCrisis ? config('care.emergency_contacts', []) : [],
         ];
     }
 }

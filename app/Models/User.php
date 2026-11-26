@@ -17,6 +17,9 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\HasApiTokens;
 use Modules\Appointments\Models\AppointmentProfessional;
+use Modules\Appointments\Models\AvailabilitySlot;
+use Modules\Appointments\Models\ProfessionalProfile;
+use Modules\Appointments\Models\UrgentAlert;
 use Modules\Auth\Enums\UserRole;
 use Modules\Library\Models\Favorite;
 use Modules\Subscriptions\Models\PartnerInstitution;
@@ -141,6 +144,21 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
     public function professionalProfile(): HasOne
     {
         return $this->hasOne(AppointmentProfessional::class, 'user_id');
+    }
+
+    public function professionalCareProfile(): HasOne
+    {
+        return $this->hasOne(ProfessionalProfile::class, 'user_id');
+    }
+
+    public function availabilitySlots(): HasMany
+    {
+        return $this->hasMany(AvailabilitySlot::class, 'professional_id');
+    }
+
+    public function urgentAlerts(): HasMany
+    {
+        return $this->hasMany(UrgentAlert::class, 'student_id');
     }
 
     public function getAppAuthenticationSecret(): ?string

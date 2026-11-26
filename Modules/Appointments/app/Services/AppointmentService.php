@@ -55,9 +55,11 @@ class AppointmentService
 
     public function confirm(Appointment $appointment, User $user, ?string $meetingLink = null): Appointment
     {
+        $link = $meetingLink ?: $appointment->meeting_link ?: $appointment->meeting_url;
         $appointment->update([
             'status' => AppointmentStatus::Confirmed,
-            'meeting_link' => $meetingLink ?: $appointment->meeting_link,
+            'meeting_link' => $link,
+            'meeting_url' => $link,
         ]);
 
         return $appointment;

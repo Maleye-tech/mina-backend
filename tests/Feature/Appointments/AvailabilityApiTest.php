@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Modules\Appointments\Models\AppointmentAvailability;
 use Modules\Appointments\Models\AppointmentProfessional;
+use Modules\Appointments\Models\ProfessionalProfile;
 use Modules\Auth\Enums\UserRole;
 use Tests\TestCase;
 
@@ -18,6 +19,14 @@ class AvailabilityApiTest extends TestCase
         $this->app['auth']->forgetGuards();
 
         $user = User::factory()->create(['role' => UserRole::Professional]);
+        ProfessionalProfile::query()->create([
+            'user_id' => $user->id,
+            'display_name' => $user->name,
+            'specialty' => 'psychologue',
+            'languages' => ['Français'],
+            'is_verified' => true,
+            'charter_accepted_at' => now(),
+        ]);
         $token = $user->createToken('availability-test', ['full-access']);
 
         $this->withToken($token->plainTextToken);

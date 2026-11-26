@@ -59,7 +59,7 @@ class MultiRoleRegistrationTest extends TestCase
         ]);
     }
 
-    public function test_can_register_as_professional(): void
+    public function test_professional_cannot_self_register(): void
     {
         $response = $this->postJson('/api/auth/register', [
             'name' => 'Dr. Marie Fall',
@@ -70,17 +70,11 @@ class MultiRoleRegistrationTest extends TestCase
             'professional_title' => 'Psychiatre & Addictologue',
         ]);
 
-        $response->assertCreated()
-            ->assertJsonPath('user.role', 'professional')
-            ->assertJsonPath('user.role_label', 'Professionnel de santé mentale')
-            ->assertJsonPath('user.role_profile.type', 'professional')
-            ->assertJsonPath('user.role_profile.title', 'Psychiatre & Addictologue');
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors('role');
 
-        $user = User::where('email', 'marie.fall@example.com')->first();
-        $this->assertNotNull($user);
-        $this->assertDatabaseHas('appointment_professionals', [
-            'user_id' => $user->id,
-            'title' => 'Psychiatre & Addictologue',
+        $this->assertDatabaseMissing('users', [
+            'email' => 'marie.fall@example.com',
         ]);
     }
 
@@ -118,7 +112,7 @@ class MultiRoleRegistrationTest extends TestCase
         ]);
     }
 
-    public function test_onboarding_route_returns_4_roles_definitions(): void
+    public function test_onboarding_route_returns_3_public_roles_definitions(): void
     {
         $student = User::factory()->create(['role' => UserRole::Student]);
         $token = $student->createToken('test', ['full-access']);
@@ -137,7 +131,7 @@ class MultiRoleRegistrationTest extends TestCase
             ]);
 
         $roles = collect($response->json('available_roles'))->pluck('id')->all();
-        $this->assertEquals(['student', 'ambassador', 'professional', 'partner'], $roles);
+        $this->assertEquals(['student', 'ambassador', 'partner'], $roles);
     }
 
     public function test_partner_dashboard_and_code_generation(): void

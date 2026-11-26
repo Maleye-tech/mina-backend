@@ -5,6 +5,7 @@ namespace Tests\Feature\Appointments;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Modules\Appointments\Models\Alert;
+use Modules\Appointments\Models\ProfessionalProfile;
 use Modules\Auth\Enums\UserRole;
 use Tests\TestCase;
 
@@ -16,6 +17,14 @@ class AlertApiTest extends TestCase
     {
         $this->app['auth']->forgetGuards();
         $user = User::factory()->create(['role' => UserRole::Professional]);
+        ProfessionalProfile::query()->create([
+            'user_id' => $user->id,
+            'display_name' => $user->name,
+            'specialty' => 'psychologue',
+            'languages' => ['Français'],
+            'is_verified' => true,
+            'charter_accepted_at' => now(),
+        ]);
         $token = $user->createToken('alert-pro-test', ['full-access']);
         $this->withToken($token->plainTextToken);
 
@@ -54,6 +63,14 @@ class AlertApiTest extends TestCase
         Alert::factory()->create(['user_id' => $owner->id, 'title' => 'Alerte owner', 'type' => 'system', 'severity' => 'low', 'message' => 'msg', 'status' => 'open']);
 
         $intruder = User::factory()->create(['role' => UserRole::Professional]);
+        ProfessionalProfile::query()->create([
+            'user_id' => $intruder->id,
+            'display_name' => $intruder->name,
+            'specialty' => 'psychologue',
+            'languages' => ['Français'],
+            'is_verified' => true,
+            'charter_accepted_at' => now(),
+        ]);
         $intruderToken = $intruder->createToken('alert-intruder', ['full-access']);
 
         $this->app['auth']->forgetGuards();

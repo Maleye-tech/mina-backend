@@ -7,9 +7,6 @@ use Illuminate\Database\Eloquent\Factories\Attributes\UseModel;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Modules\Appointments\Models\Alert;
 
-/**
- * @extends Factory<Alert>
- */
 #[UseModel(Alert::class)]
 class AlertFactory extends Factory
 {

@@ -15,7 +15,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Modules\Appointments\Models\AppointmentProfessional;
 use Modules\Auth\Enums\UserRole;
 use Modules\Auth\Http\Requests\ChangePasswordRequest;
 use Modules\Auth\Http\Requests\DeleteAccountRequest;
@@ -79,9 +78,9 @@ class AuthController extends Controller
         $roleInput = $request->validated('role', 'student');
         $role = UserRole::tryFrom($roleInput) ?? UserRole::Student;
 
-        // Sécurité : interdire la création d'un compte admin via l'inscription publique
-        if ($role === UserRole::Admin) {
-            $role = UserRole::Student;
+        // Les comptes professionnels sont créés uniquement sur invitation d'un administrateur.
+        if (in_array($role, [UserRole::Admin, UserRole::Professional], true)) {
+            abort(403, 'Les comptes professionnels sont créés uniquement sur invitation.');
         }
 
         $userData = [
@@ -116,16 +115,6 @@ class AuthController extends Controller
         }
 
         $user = User::create($userData);
-
-        if ($role === UserRole::Professional) {
-            AppointmentProfessional::firstOrCreate(
-                ['user_id' => $user->id],
-                [
-                    'title' => $request->input('professional_title', 'Psychologue / Conseiller'),
-                    'is_available' => true,
-                ]
-            );
-        }
 
         $user->sendEmailVerificationNotification();
 
@@ -480,11 +469,13 @@ class AuthController extends Controller
             ],
             UserRole::Professional => [
                 'type' => 'professional',
-                'title' => $user->professionalProfile?->title ?? 'Psychologue clinicien',
-                'bio' => $user->professionalProfile?->bio,
+                'title' => $user->professionalCareProfile?->specialty?->label() ?? $user->professionalProfile?->title ?? 'Psychologue clinicien',
+                'bio' => $user->professionalCareProfile?->bio ?? $user->professionalProfile?->bio,
                 'phone' => $user->professionalProfile?->phone,
                 'is_available' => (bool) ($user->professionalProfile?->is_available ?? true),
-                'onboarding_completed' => true,
+                'is_verified' => (bool) ($user->professionalCareProfile?->is_verified ?? false),
+                'has_accepted_charter' => $user->professionalCareProfile?->hasAcceptedCharter() ?? false,
+                'onboarding_completed' => $user->professionalCareProfile?->hasAcceptedCharter() ?? false,
             ],
             UserRole::Partner => [
                 'type' => 'partner',

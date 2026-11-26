@@ -4,11 +4,7 @@ namespace Modules\Appointments\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Modules\Appointments\Models\Alert;
 
-/**
- * @mixin Alert
- */
 class AlertResource extends JsonResource
 {
     public function toArray(Request $request): array
